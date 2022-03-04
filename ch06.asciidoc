@@ -1,0 +1,314 @@
+[[labels_and_annotations]]
+== Labels and Annotations
+
+Kubernetes was made to grow with you as your application scales both in size and complexity.  With this in mind, labels and annotations were added as foundational concepts.  Labels and annotations let you work in sets of things that map to how _you_ think about your application.  You can organize, mark, and cross-index all of your resources to represent the groups that make the most sense for your application.
+
+_Labels_ are key/value pairs that can be attached to Kubernetes objects such as Pods and ReplicaSets. They can be arbitrary, and are useful for attaching identifying information to Kubernetes objects. Labels provide the foundation for grouping objects.
+
+_Annotations_, on the other hand, provide a storage mechanism that resembles labels: annotations are key/value pairs designed to hold nonidentifying information that can be leveraged by tools and libraries.
+
+=== Labels
+
+Labels ((("labels", id="labels")))provide identifying metadata for objects. These are fundamental qualities of the object that will be used for grouping, viewing, and operating.
+
+[NOTE]
+====
+The motivations for labels grew out of Google's experience in running large and complex applications.  There were a couple of lessons that emerged from this experience.  See the great pass:[<a class="orm:hideurl" href="http://shop.oreilly.com/product/0636920041528.do"><em>Site Reliability Engineering</em></a>] by Betsy Beyer et al. (O'Reilly) for some deeper background on how Google approaches production systems.
+
+The first lesson is that production abhors a singleton. When deploying software, users will often start with a single instance.  However, as
+the application matures, these singletons often multiply and become sets of objects. With this in mind, Kubernetes uses labels to deal with _sets_ of objects instead of single instances.
+
+The second lesson is that any hierarchy imposed by the system will fall short for many users.  In addition, user grouping and hierarchy are subject to change over time.  For instance, a user may start out with the idea that all apps are made up of many services. However, over time, a service may be shared across multiple apps.  Kubernetes labels are flexible enough to adapt to these situations and more.
+====
+
+Labels have simple syntax. They are key/value pairs where both the key and value are represented by strings. Label keys can be broken down into two parts: an optional prefix and a name, separated by a slash. The prefix, if specified, must be a DNS subdomain with a 253-character limit. The key name is required and must be shorter than 63 characters. Names must also start and end with an alphanumeric character and permit the use of dashes (`-`), underscores (`_`), and dots (`.`) between characters.
+
+Label values are strings with a maximum length of 63 characters. The contents of the label values follow the same rules as for label keys.
+
+<<label_examples_table>> shows valid label keys and values.
+
+[[label_examples_table]]
+.Label examples
+[options="header"]
+|=======
+|Key|Value
+|`acme.com/app-version`|`1.0.0`
+|`appVersion`|`1.0.0`
+|`app.version`|`1.0.0`
+|`kubernetes.io/cluster-service`|`true`
+|=======
+
+==== Applying Labels
+
+Here ((("labels", "applying", id="labels-applying")))we create a few deployments (a way to create an array of Pods) with some
+interesting labels.  We'll take ((("labels", "bandicoot app", id="labels-bandicootapp")))two ((("labels", "alpaca app", id="labels-alpacaapp")))apps (called `alpaca` and `bandicoot`) and
+have two environments for each.  We will also have two different versions.
+
+. First, create the `alpaca-prod` deployment and set the `ver`, `app`, and `env` ((("kubectl tool", "commands", "run ")))labels:
++
+++++
+<pre data-type="programlisting">$ <strong>kubectl run alpaca-prod \
+  --image=gcr.io/kuar-demo/kuard-amd64:1 \
+  --replicas=2 \
+  --labels="ver=1,app=alpaca,env=prod"</strong></pre>
+++++
+
+. Next, create the `alpaca-test` deployment and set the `ver`, `app`, and `env` labels with the appropriate values:
++
+++++
+<pre data-type="programlisting">$ <strong>kubectl run alpaca-test \
+  --image=gcr.io/kuar-demo/kuard-amd64:2 \
+  --replicas=1 \
+  --labels="ver=2,app=alpaca,env=test"</strong></pre>
+++++
+
+. Finally, create two deployments for `bandicoot`.  Here we name the
+environments `prod` and `staging`:
++
+++++
+<pre data-type="programlisting">$ <strong>kubectl run bandicoot-prod \
+  --image=gcr.io/kuar-demo/kuard-amd64:2 \
+  --replicas=2 \
+  --labels="ver=2,app=bandicoot,env=prod"</strong>
+$ <strong>kubectl run bandicoot-staging \
+  --image=gcr.io/kuar-demo/kuard-amd64:2 \
+  --replicas=1 \
+  --labels="ver=2,app=bandicoot,env=staging"</strong></pre>
+++++
+
+At this point you should have four ((("kubectl tool", "commands", "get ", id="getcommand-kubectltool")))deployments—++alpaca-prod++, `alpaca-staging`, `bandicoot-prod`, and `bandicoot-staging`:
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl get deployments --show-labels</strong>
+
+NAME                ... LABELS
+alpaca-prod         ... app=alpaca,env=prod,ver=1
+alpaca-test         ... app=alpaca,env=test,ver=2
+bandicoot-prod      ... app=bandicoot,env=prod,ver=2
+bandicoot-staging   ... app=bandicoot,env=staging,ver=2</pre>
+++++
+
+We can visualize this as a ((("labels", "deployments Venn diagram", id="labels-deploymentsVenndiagram")))Venn diagram based on the ((("labels", "applying", startref="labels-applying")))labels (<<fig0601>>).
+
+[[fig0601]]
+.Visualization of labels applied to our deployments
+image::images/kuar_06in01.png["Visualization of Labels applied to our Deployments"]
+
+==== Modifying Labels
+
+Labels ((("labels", "modifying")))can ((("labels", "pod-template-hash")))also be applied (or updated) on ((("kubectl tool", "commands", "get", startref="getcommand-kubectltool")))objects after they are created. 
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl label deployments alpaca-test "canary=true"</strong></pre>
+++++
+
+[WARNING]
+====
+There is a caveat to be aware of here. In this example, ((("kubectl tool", "commands", "label ")))the `kubectl label` command will only change the label on the deployment itself; it won't affect the objects (ReplicaSets and Pods) the deployment creates.  To change those, you'll need to change the template embedded in the deployment (see <<deployments_chapter>>).
+====
+
+You can also use the `-L` option to `kubectl get` to show a label value as a column:
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl get deployments -L canary</strong>
+
+NAME                DESIRED   CURRENT   ... CANARY
+alpaca-prod         2         2         ... &lt;none&gt;
+alpaca-test         1         1         ... true
+bandicoot-prod      2         2         ... &lt;none&gt;
+bandicoot-staging   1         1         ... &lt;none&gt;</pre>
+++++
+
+You can remove a label by applying a dash suffix:
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl label deployments alpaca-test "canary-"</strong></pre>
+++++
+
+==== Label Selectors
+
+Label ((("labels", "selectors", id="labels-selectors")))selectors ((("selectors, label", id="selectors-label")))are used to filter Kubernetes objects based on a set of labels. Selectors use a simple Boolean language. They are used both by end users (via tools like `kubectl`) and by different types of objects (such as how ReplicaSet relates to its Pods).
+
+Each deployment (via a ReplicaSet) creates a set of Pods using the labels specified in the template embedded in the deployment.  This is configured ((("kubectl tool", "commands", "run ")))by the `kubectl run` command.
+
+Running ((("kubectl tool", "commands", "get pods ", id="getpodscommand-kubectltool2")))the `kubectl get pods` command should return all the Pods currently running in the cluster. We should have a total of six `kuard` Pods across our three environments:
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl get pods --show-labels</strong>
+
+NAME                              ... LABELS
+alpaca-prod-3408831585-4nzfb      ... app=alpaca,env=prod,ver=1,...
+alpaca-prod-3408831585-kga0a      ... app=alpaca,env=prod,ver=1,...
+alpaca-test-1004512375-3r1m5      ... app=alpaca,env=test,ver=2,...
+bandicoot-prod-373860099-0t1gp    ... app=bandicoot,env=prod,ver=2,...
+bandicoot-prod-373860099-k2wcf    ... app=bandicoot,env=prod,ver=2,...
+bandicoot-staging-1839769971-3ndv ... app=bandicoot,env=staging,ver=2,...</pre>
+++++
+
+[NOTE]
+====
+You may see a new label that we haven't seen ((("labels", "pod-template-hash")))yet: `pod-template-hash`.  This label is applied by the deployment so it can keep track of which pods were
+generated from which template versions.  This allows the deployment to manage updates in a clean way, as will be covered in depth in <<deployments_chapter>>.
+====
+
+If we only wanted to list pods that had the `ver` label set to `2` we
+could use the pass:[<code class="keep-together">--selector</code>] flag:
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl get pods --selector="ver=2"</strong>
+
+NAME                                 READY     STATUS    RESTARTS   AGE
+alpaca-test-1004512375-3r1m5         1/1       Running   0          3m
+bandicoot-prod-373860099-0t1gp       1/1       Running   0          3m
+bandicoot-prod-373860099-k2wcf       1/1       Running   0          3m
+bandicoot-staging-1839769971-3ndv5   1/1       Running   0          3m</pre>
+++++
+
+If we specify two selectors separated by a comma, only the objects that satisfy both will be returned.  This is a logical AND operation:
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl get pods --selector="app=bandicoot,ver=2"</strong>
+
+NAME                                 READY     STATUS    RESTARTS   AGE
+bandicoot-prod-373860099-0t1gp       1/1       Running   0          4m
+bandicoot-prod-373860099-k2wcf       1/1       Running   0          4m
+bandicoot-staging-1839769971-3ndv5   1/1       Running   0          4m</pre>
+++++
+
+We can also ask if a label is one of a set of values.  Here we ask for all pods where the `app` label is set to `alpaca` or `bandicoot` (which will be all six pods):
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl get pods --selector="app in (alpaca,bandicoot)"</strong>
+
+NAME                                 READY     STATUS    RESTARTS   AGE
+alpaca-prod-3408831585-4nzfb         1/1       Running   0          6m
+alpaca-prod-3408831585-kga0a         1/1       Running   0          6m
+alpaca-test-1004512375-3r1m5         1/1       Running   0          6m
+bandicoot-prod-373860099-0t1gp       1/1       Running   0          6m
+bandicoot-prod-373860099-k2wcf       1/1       Running   0          6m
+bandicoot-staging-1839769971-3ndv5   1/1       Running   0          6m</pre>
+++++
+
+Finally, we can ask if a label is set at all.  Here we are asking for all of the deployments with the `canary` label set to anything:
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl get deployments --selector="canary"</strong>
+
+NAME          DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
+alpaca-test   1         1         1            1           7m</pre>
+++++
+
+There are also "negative" versions of each of these, as ((("selectors,  label", startref="selectors-label")))shown ((("labels", "selectors", startref="labels-selectors")))in <<selector-operators-table>>.
+
+[[selector-operators-table]]
+.Selector operators
+[options="header"]
+|=====
+| Operator | Description
+| `key=value` | `key` is set to `value`
+| `key!=value` | `key` is not set to `value`
+| `key in (value1, value2)` | `key` is one of `value1` or `value2`
+| `key notin (value1, value2)` | `key` is not one of `value1` or `value2`
+| `key` | `key` is set
+| `!key` | `key` is not set
+|=====
+
+==== Label Selectors in API Objects
+
+When ((("API objects", "label selectors in", id="APIobjects-labelselectorsin")))a Kubernetes object refers to a set of other Kubernetes objects, a ((("label selectors")))label selector is used.  Instead of a simple string as described in the previous section, a parsed structure is used.
+
+For historical reasons (Kubernetes doesn't break API compatibility!), there are two forms. Most objects support a newer, more powerful set of selector operators.
+
+A selector of `app=alpaca,ver in (1, 2)` would be converted to this:
+
+----
+selector:
+  matchLabels:
+    app: alpaca
+  matchExpressions:
+    - {key: ver, operator: In, values: [1, 2]} <1>
+----
+<1> Compact YAML syntax.  This is an item in a list
+(pass:[<code class="keep-together">matchExpressions</code>]) that is a map with three entries.  The last entry (`values`) has a value that is a list with two items.
+
+All of the terms are evaluated as a logical AND.  The only way to represent the `!=` operator is to convert it to a `NotIn` expression with a single value.
+
+The ((("label selectors")))older form of specifying selectors (used in ++ReplicationController++s and services) only supports the `=` operator.  This is a simple set of key/value pairs that must all match a target object to be selected.
+
+The ((("labels", "bandicoot app", startref="labels-bandicootapp")))selector `app=alpaca,ver=1` would ((("labels", "alpaca app", startref="labels-alpacaapp")))be ((("labels", "selectors", startref="labels-selectors")))represented ((("API objects", "label selectors in", startref="APIobjects-labelselectorsin")))like ((("labels", startref="labels")))this:
+
+----
+selector:
+  app: alpaca
+  ver: 1
+----
+
+=== Annotations
+
+Annotations ((("annotations", id="annotations")))provide a place to store additional metadata for Kubernetes objects with the sole purpose of assisting tools and libraries.  They are a way for other programs driving Kubernetes via an API to store some opaque data with an
+object.  Annotations can be used for the tool itself or to pass configuration information between external systems.
+
+While labels are used to identify and group objects, annotations are used to provide extra information about where an object came from, how to use it, or policy around that object.  There is overlap, and it is a matter of taste as to when to use an annotation or a label.  When in doubt, add information to an object as an annotation and promote it to a label if you find yourself wanting to use it in a selector.
+
+Annotations are used to:
+
+* Keep track of a "reason" for the latest update to an object.
+
+* Communicate a specialized scheduling policy to a specialized scheduler.
+
+* Extend data about the last tool to update the resource and how it was
+updated (used for detecting changes by other tools and doing a smart
+merge).
+
+* Build, release, or image information that isn't appropriate for labels (may include a Git hash, timestamp, PR number, etc.).
+
+* Enable the +Deployment+ object (<<deployments_chapter>>) to keep track of ReplicaSets that it is managing for rollouts.
+
+* Provide extra data to enhance the visual quality or usability of a UI.  For example, objects could include a link to an icon (or a base64-encoded version of an icon).
+
+* Prototype alpha functionality in Kubernetes (instead of creating a first-class API field, the parameters for that functionality are instead encoded in an annotation).
+
+Annotations are used in various places in Kubernetes, with the primary use case being rolling deployments. During rolling deployments, annotations are used to track rollout status and provide the necessary information required to roll back a deployment to a previous state.
+
+Users should avoid using the Kubernetes API server as a general-purpose
+database.  Annotations are good for small bits of data that are highly
+associated with a specific resource.  If you want to store data in Kubernetes but you don't have an obvious object to associate it with, consider storing that data in some other, more appropriate database.
+
+==== Defining Annotations
+
+Annotation ((("annotations", startref="annotations")))keys use the same format as label keys. However, because they are often used to communicate information between tools, the "namespace" part of the key is more important.  Example keys include `deployment.kubernetes.io/revision` or
+`kubernetes.io/change-cause`.
+
+The value component of an annotation is a free-form string field. While this allows maximum flexibility as users can store arbitrary data, because this is arbitrary text, there is no validation of any format.  For example, it is not uncommon for a JSON document to be encoded as a string and stored in an annotation. It is important to note that the Kubernetes server has no knowledge of the required format of annotation values. If annotations are used to pass or store data, there is no guarantee the data is valid. This can make tracking down errors more difficult.
+
+Annotations are defined in the ((("annotations", "metadata section")))common `metadata` section in every Kubernetes object:
+
+----
+...
+metadata:
+  annotations:
+    example.com/icon-url: "https://example.com/icon.png"
+...
+----
+
+Annotations are very convenient and provide powerful loose coupling.  However, they should be used judiciously to avoid an untyped mess of data.
+
+=== Cleanup
+
+It is easy to clean up all of the deployments that we started in this ((("kubectl tool", "commands", "delete deployments ")))chapter:
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl delete deployments --all</strong></pre>
+++++
+
+If you want to be more selective you can use the `--selector` flag to choose which deployments to delete.
+
+=== Summary
+
+Labels are used to identify and optionally group objects in a Kubernetes
+cluster. Labels are also used in selector queries to provide flexible runtime grouping of objects such as pods.
+
+Annotations provide object-scoped key/value storage of metadata that can be used by automation tooling and client libraries. Annotations can also be used to hold configuration data for external tools such as third-party schedulers and monitoring tools.
+
+Labels and annotations are key to understanding how key components in a
+Kubernetes cluster work together to ensure the desired cluster state. Using labels and annotations properly unlocks the true power of Kubernetes's flexibility and provides the starting point for building automation tools and deployment workflows.

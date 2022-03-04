@@ -1,0 +1,45 @@
+[appendix]
+== kubectl - The Kubernetes Client
+
+=== Quick Deployments
+==== run
+==== expose
+==== scale
+==== autoscale
+
+=== Managing Kubernetes Objects
+==== get
+==== describe
+==== create
+==== replace
+==== patch
+==== delete
+==== edit
+==== apply
+==== label
+==== annotate
+==== convert
+==== rollout
+
+=== Interacting with Pods
+==== logs
+==== attach
+==== exec
+==== port-forward
+==== rolling-update
+
+=== Managing Nodes
+==== cordon
+==== drain
+==== uncordon
+
+=== Interacting with Clusters
+==== cluster-info
+==== api-versions
+==== proxy
+
+=== Getting Help
+==== explain
+
+=== Managing Cluster Configuration
+==== config

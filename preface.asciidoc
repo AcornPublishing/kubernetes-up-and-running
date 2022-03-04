@@ -1,0 +1,150 @@
+[preface]
+== Preface
+
+=== Kubernetes: A Dedication
+Kubernetes would like to thank every sysadmin who has woken up at 3 a.m. to restart a process. Every developer who pushed code to production only to find that it didn't run like it did on their laptop. Every systems architect who mistakenly pointed a load test at the production service because of a leftover hostname that they hadn't updated. It was the pain, the weird hours, and the weird errors that inspired the development of Kubernetes. In a single sentence: Kubernetes intends to radically simplify the task of building, deploying, and maintaining distributed systems. It has been inspired by decades of real-world experience building reliable systems and it has been designed from the ground up to make that experience, if not euphoric, at least pleasant. We hope you enjoy the book!
+
+=== Who Should Read This Book
+////
+This is where you describe your reader. Think of this in terms of what they do in their jobs, how this will make their tasks easier, and what knowledge you'd like them to have before getting the most out of this book.
+////
+
+Whether you are new to distributed systems or have been deploying cloud-native systems for years, containers and Kubernetes can help you achieve new levels of velocity, agility, reliability, and efficiency. This book describes the Kubernetes cluster orchestrator and how its tools and APIs can be used to improve the development, delivery, and maintenance of distributed applications. Though no previous experience with Kubernetes is assumed, to make maximal use of the book you should be comfortable building and deploying server-based applications. Familiarity with concepts like load balancers and network storage will be useful, though not required. Likewise, experience with Linux, Linux containers, and Docker, though not essential, will help you make the most of this book.
+
+=== Why We Wrote This Book
+////
+Here you should describe how this book might have helped you at one point, and how this book adds to the body of knowledge or fills a gap. Another way to think of this is 'what we hope you'll get out of this.' You could also call this section "Goals of This Book"
+////
+
+We have been involved with Kubernetes since its very beginnings. It has been truly remarkable to watch it transform from a curiosity largely used in experiments to a crucial production-grade infrastructure that powers large-scale production applications in varied fields, from machine learning to online services. As this transition occurred, it became increasingly clear that a book that captured both how to use the core concepts in Kubernetes and the motivations behind the development of those concepts would be an important contribution to the state of cloud-native application development. We hope that in reading this book, you not only learn how to build reliable, scalable applications on top of Kubernetes, but also that you receive insight into the core challenges of distributed systems that led to its development.
+
+=== A Word on Cloud-Native Applications Today
+////
+Optional section. Depending on your book's topic, you can re-word the above to be, "A Word on JavaScript Today," or "A Word on Big Data Today," etc. Then place your book in context of the state of play of the topic.  This is key to anchoring your reader and getting them oriented to your perspective as they navigate the book.
+////
+
+From the first programming languages, to object-oriented programming, to the development of virtualization and cloud infrastructure, the history of computer science is a history of the development of abstractions that hide complexity and empower you to build ever more sophisticated applications. Despite this, the development of reliable, scalable applications is still dramatically more challenging than it ought to be. In recent years, containers and container orchestration APIs like Kubernetes have become an important abstraction that radically simplifies the development of reliable, scalable distributed systems. Though containers and orchestrators are still in the process of entering the mainstream, they are already enabling developers to build and deploy applications with a speed, agility, and reliability that would have seemed like science fiction only a few years ago.
+
+=== Navigating This Book
+
+This book is organized as follows. The first chapter outlines the high-level benefits of Kubernetes without diving too deeply into the details. If you are new to Kubernetes, this is a great place to start to understand why you should read the rest of the book.
+
+The following chapter provides a detailed introduction to containers and containerized application development. If you've never really played around with Docker before, this chapter will be a useful introduction. If you are already a Docker expert, it will likely be mostly review.
+
+<<deploying_kubernetes>> covers how to deploy Kubernetes.  While most of this book focuses on how to _use_ Kubernetes, you need to get a cluster up and running before you start using it. While running a cluster for production is out of the scope of this book, this chapter presents a couple of easy ways to create a cluster so that you can understand how to use Kubernetes.
+
+Starting with <<pods>>, we dive into the details of deploying an application using Kubernetes. We cover Pods (<<pods>>), labels and annotations (<<labels_and_annotations>>), services (<<service_discovery>>), and ReplicaSets (<<replica_set>>).  These form the core basics of what you need to deploy your service in Kubernetes.
+
+After those chapters, we cover some more specialized objects in Kubernetes: ++DaemonSet++s (<<daemon_sets>>), jobs (<<jobs>>), and ++ConfigMap++s and secrets (<<configmaps_secrets>>). While these chapters are essential for many production applications, if you are just learning Kubernetes they can be skipped and returned to later, after you gain more experience and expertise.
+
+We then cover deployments (<<deployments_chapter>>), which tie together the lifecycle of a complete application, and integrating storage into Kubernetes (<<storage_k8s>>). Finally, we conclude with some examples of how to develop and deploy real-world applications in Kubernetes.
+
+////
+Here is where you'll offer a summary of each of your book's chapters.  I've inserted a sample below from a Java book:
+
+This book is organized roughly as follows:
+* Chapters 1 and 2 provide a basic introduction to Java concepts and a tutorial to give you a jump start on Java programming
+* Chapter 3 discusses fundamental tools for developing with Java (the compiler, the interpreter, and the JAR file package).
+* Chapter 4 through 7 describe the Java language itself, beginning with the basic syntax and then covering classes and objects, exceptions, arrays, enumerations, annotations, and much more.
+* And so on..
+
+If you're like us, you don't read books from front to back. If you're really like us, you usually don't read the Preface at all. However, on the off chance that you will see this in time, here are a few suggestions:
+
+* If you are an experienced programmer who has to learn Java in the next five minutes, you are probably looking for the examples. You might want to start by glancing at the tutorial in Chapter 2. If that doesn't float your boat, you should at least look at the information in Chapter 3, which explains how to use the complier and interpreter, or Appendix A, which shows how to run the examples in the Eclipse IDE. This should get you started.
+* Chapter 12 through 15 are essential if you are interested in writing advanced networked or web-based applications and services. This is one of the more interesting and important parts of Java.
+* And so on..
+////
+
+=== Online Resources
+////
+Here is where you should list online references you feel readers should add to their bookmarks or should familiarize themselves with prior to beginning your book.
+////
+
+You will want to install https://docker.com[Docker]. You likely will also want to familiarize yourself with the Docker documentation if you have not already done so.
+
+Likewise, you will want to install the https://kubernetes.io[+kubectl+ command-line tool]. You may also want to join the http://slack.kubernetes.io[Kubernetes slack channel], where you will find a large community of users who are willing to talk and answer questions at nearly any hour of the day.
+
+Finally, as you grow more advanced, you may want to engage with the open source https://github.com/kubernetes/kubernetes[Kubernetes repository on GitHub].
+
+=== Conventions Used in This Book
+////
+Let me know if you need to edit this section.
+////
+
+The following typographical conventions are used in this book:
+
+_Italic_:: Indicates new terms, URLs, email addresses, filenames, and file extensions.
+
++Constant width+:: Used for program listings, as well as within paragraphs to refer to program elements such as variable or function names, databases, data types, environment variables, statements, and keywords.
+
+**`Constant width bold`**:: Shows commands or other text that should be typed literally by the user.
+
+_++Constant width italic++_:: Shows text that should be replaced with user-supplied values or by values determined by context.
+
+
+[NOTE]
+====
+This icon signifies a tip, suggestion, or general note.
+====
+
+[WARNING]
+====
+This icon indicates a warning or caution.
+====
+
+=== Using Code Examples
+////
+Do not edit this section.
+////
+
+Supplemental material (code examples, exercises, etc.) is available for download at link:$$https://github.com/kubernetes-up-and-running/examples$$[].
+
+This book is here to help you get your job done. In general, if example code is offered with this book, you may use it in your programs and documentation. You do not need to contact us for permission unless you’re reproducing a significant portion of the code. For example, writing a program that uses several chunks of code from this book does not require permission. Selling or distributing a CD-ROM of examples from O’Reilly books does require permission. Answering a question by citing this book and quoting example code does not require permission. Incorporating a significant amount of example code from this book into your product’s documentation does require permission.
+
+We appreciate, but do not require, attribution. An attribution usually includes the title, author, publisher, and ISBN. For example: “_Kubernetes: Up and Running_ by Kelsey Hightower, Brendan Burns, and Joe Beda (O’Reilly). Copyright 2017 Kelsey Hightower, Brendan Burns, and Joe Beda, 978-1-491-93567-5.”
+
+If you feel your use of code examples falls outside fair use or the permission given above, feel free to contact us at pass:[<a href="mailto:permissions@oreilly.com"><em>permissions@oreilly.com</em></a>].
+
+=== O'Reilly Safari
+
+[role = "safarienabled"]
+[NOTE]
+====
+pass:[<a href="http://oreilly.com/safari" class="orm:hideurl"><em class="hyperlink">Safari</em></a>] (formerly Safari Books Online) is a membership-based training and reference platform for enterprise, government, educators, and individuals.
+====
+
+Members have access to thousands of books, training videos, Learning Paths, interactive tutorials, and curated playlists from over 250 publishers, including O’Reilly Media, Harvard Business Review, Prentice Hall Professional, Addison-Wesley Professional, Microsoft Press, Sams, Que, Peachpit Press, Adobe, Focal Press, Cisco Press, John Wiley & Sons, Syngress, Morgan Kaufmann, IBM Redbooks, Packt, Adobe Press, FT Press, Apress, Manning, New Riders, McGraw-Hill, Jones & Bartlett, and Course Technology, among others.
+
+For more information, please visit pass:[<a href="http://oreilly.com/safari" class="orm:hideurl"><em>http://oreilly.com/safari</em></a>].
+
+=== How to Contact Us
+
+Please address comments and questions concerning this book to the publisher:
+
+++++
+<ul class="simplelist">
+  <li>O’Reilly Media, Inc.</li>
+  <li>1005 Gravenstein Highway North</li>
+  <li>Sebastopol, CA 95472</li>
+  <li>800-998-9938 (in the United States or Canada)</li>
+  <li>707-829-0515 (international or local)</li>
+  <li>707-829-0104 (fax)</li>
+</ul>
+++++
+
+We have a web page for this book, where we list errata, examples, and any additional information. You can access this page at link:$$http://bit.ly/kubernetes-up-and-running$$[].
+
+++++
+<!--Don't forget to update the link above.-->
+++++
+
+To comment or ask technical questions about this book, send email to pass:[<a class="email" href="mailto:bookquestions@oreilly.com"><em>bookquestions@oreilly.com</em></a>].
+
+For more information about our books, courses, conferences, and news, see our website at link:$$http://www.oreilly.com$$[].
+
+Find us on Facebook: link:$$http://facebook.com/oreilly$$[]
+
+Follow us on Twitter: link:$$http://twitter.com/oreillymedia$$[]
+
+Watch us on YouTube: link:$$http://www.youtube.com/oreillymedia$$[]
+

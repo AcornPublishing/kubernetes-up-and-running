@@ -1,0 +1,812 @@
+[[deploying_kubernetes]]
+== Deploying a Kubernetes Cluster
+
+This chapter will walk you through provisioning a multi-node Kubernetes cluster capable of running a wide variety of container-based workloads. Kubernetes requires a specific network layout where each pod running in a given cluster has a dedicated IP address. The Kubernetes networking model also requires each pod and node have the ability to directly communicate with every other pod and node in the cluster. These requirements at first may seem arbitrary. However, they allow the Kubernetes cluster to utilize techniques in automatic service discovery and fine-grained application monitoring while avoiding pitfalls such as port collisions.
+
+This chapter covers:
+
+* Provisioning cluster nodes
+* Configuring a Kubernetes compatible network
+* Deploying Kubernetes services and client tools
+
+A Kubernetes cluster comprises of a consistent data store, and a collection of controller and worker services.
+
+==== Consistent Data Store
+
+All cluster state is stored in a key-value store called etcd. etcd is a distributed, consistent key-value store which can be used to store shared configuration and service discovery information. Etcd has a focus on being:
+
+* Secure: optional SSL client cert authentication
+* Fast: benchmarked at 1000s of writes per second
+* Reliable: properly distributed using the Raft consensus algorithm
+
+The usage of a strongly consistent data store is critical to the proper operation of a Kubernetes cluster. Cluster state _must be consistent_ to ensure cluster services have accurate information when making scheduling decisions or enforcing end-user policies and desired end-state.
+
+==== Controller Services
+
+Controller services provide the necessary infrastructure for declaring and enforcing desired cluster state. The controller stack includes the following components:
+
+* API Server
+* Controller Manager
+* Scheduler
+
+Controller services are deployed to controller nodes. Separating controller and worker services helps protect the SLA of the critical infrastructure services they provide.
+
+==== Worker Services
+
+Worker services are responsible for managing pods and service endpoints on a given system. The worker stack includes the following components:
+
+* Kubelet
+* Service Proxy
+* Docker
+
+Docker, the container runtime engine, facilitates the creation and destruction of containers as determined by the Kubelet.
+
+=== Kubernetes Nodes
+
+Nodes must have network connectivity between them, ideally in the same datacenter or availability zone. Nodes should also have a valid hostname that can be resolved using DNS by other nodes within the cluster. For example, the machines in the lab have the following DNS names:
+
+.Cluster Machines
+[options="header"]
+|=======
+|internal hostname|external hostname
+|node0.c.kubernetes-up-and-running.internal|node0.kuar.io
+|node1.c.kubernetes-up-and-running.internal|node1.kuar.io
+|node2.c.kubernetes-up-and-running.internal|node2.kuar.io
+|node3.c.kubernetes-up-and-running.internal|node3.kuar.io
+|=======
+
+==== System Requirements
+
+System requirements will largely depend on the number of pods running at a given time and their individual resource requirements. In the lab each node has the following system specs:
+
+* 1CPU
+* 2GB Ram
+* 40GB Hard disk space
+
+Keep in mind these are minimal system requirements, but it will be enough to get you up and running. If you ever run out of cluster resources to run additional pods, just add another node to the cluster or increase the amount of resources on any given machine.
+
+The lab used in this book utilizes the Google Cloud Platform (GCP), a set of cloud services from Google.
+
+==== The Kubernetes Machine Image
+
+The nodes in the lab will be running a customized Debian 8 machine image which has been pre-populated with the necessary software components to bootstrap a Kubernetes cluster. In order to utilize this image it must be imported it into your GCP project.
+
+In the lab I imported the Kubernetes Image into my project using +compute images create+ command:
+
+----
+$ gcloud compute images create kubernetes-1-0-6-v20151004 \
+  --source-uri https://storage.googleapis.com/kuar/kubernetes-1-0-6-v20151004.tar.gz
+----
+
+[NOTE]
+====
+For a complete gcloud command reference type `gcloud compute --help`. The Google gcloud tool can be obtained from https://cloud.google.com/sdk/gcloud/
+====
+
+==== Launching Kubernetes Nodes
+
+Create 4 machines on GCE using the +compute instances create+ command:
+
+----
+$ for i in {0..3}; do
+  gcloud compute instances create node${i} \
+  --image kubernetes-1-0-6-v20151004 \
+  --boot-disk-size 200GB \
+  --machine-type n1-standard-1 \
+  --can-ip-forward \
+  --scopes compute-rw
+done
+----
+
+.IP Forwarding
+[WARNING]
+====
+Most cloud platforms will not allow machines to send packets whose source IP address does not match the IP assigned to the machine. In the case of GCP, instances can be deployed with the `--can-ip-forward` flag to disable this restriction. The ability to do IP forwarding is critical to the network setup recommended later in this chapter.
+====
+
+Once all 4 nodes have been provisioned verify they are up and running using the `compute instances list` command:
+
+----
+$ gcloud compute instances list
+----
+
+Output:
+
+----
+NAME  ZONE          MACHINE_TYPE  INTERNAL_IP EXTERNAL_IP     STATUS
+node0 us-central1-f n1-standard-1 10.240.0.2  146.148.60.178  RUNNING
+node1 us-central1-f n1-standard-1 10.240.0.3  173.255.112.106 RUNNING
+node2 us-central1-f n1-standard-1 10.240.0.4  173.255.118.37  RUNNING
+node3 us-central1-f n1-standard-1 10.240.0.5  104.197.91.189  RUNNING
+----
+
+==== Configuring the Docker Daemon
+
+The Kubernetes network model requires each pod to have a unique IP address within the cluster. Currently Docker is responsible for allocating pod IPs based on the subnet used by the Docker bridge. To satisfy the pod IP uniqueness constraint we must ensure each Docker host has a unique subnet range. In the lab I used the following mapping to configure each Docker host.
+
+.Docker Bridge Mapping
+[options="header"]
+|=======
+|hostname|bip
+|node0.c.kubernetes-up-and-running.internal|10.200.0.1/24
+|node1.c.kubernetes-up-and-running.internal|10.200.1.1/24
+|node2.c.kubernetes-up-and-running.internal|10.200.2.1/24
+|node3.c.kubernetes-up-and-running.internal|10.200.3.1/24
+|=======
+
+The location of the Docker configuration file varies between Linux distributions, but in all cases the `--bip` flag is used to set the Docker bridge IP.
+
+[NOTE]
+====
+It is rare but you may have to consider a different CIDR range if you have any VPN rules which could route traffic inadvertently away from the bridge IPs defined above.
+====
+
+
+Create the Docker systemd unit file by writing the following contents to a file named +docker.service+:
+
+----
+# /etc/systemd/system/docker.service
+
+[Unit]
+Description=Docker Application Container Engine
+Documentation=http://docs.docker.io
+
+[Service]
+ExecStart=/usr/local/bin/docker --daemon \
+  --bip=10.200.0.1/24 \
+  --iptables=false \
+  --ip-masq=false \
+  --host=unix:///var/run/docker.sock \
+  --storage-driver=overlay
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+----
+
+[NOTE]
+====
+In the above configuration Docker will no longer manage iptables or setup the firewall rule necessary for containers to reach the internet. This will be resolved in the Getting Containers Online section.
+====
+
+Move the Docker systemd unit file to the local systemd configuration path:
+
+----
+$ sudo mv docker.service /etc/systemd/system/
+----
+
+Start the Docker service:
+
+----
+$ sudo systemctl daemon-reload  # reloads systemd loading any changes
+$ sudo systemctl enable docker  # allows startup on boot
+$ sudo systemctl start docker   # starts the service
+----
+
+Repeat the above steps on each node and be sure each Docker bridge IP is unique.
+
+==== Configuring the Kubernetes Kubelet
+
+The Kubelet is responsible for managing pods, mounts, node registration, and reporting metrics and health status to the API server. The Kubelet will be used to bootstrap the Kubernetes controller components and worker nodes.
+
+Let start by configuring the Kubelet on node0:
+
+----
+$ gcloud compute ssh node0
+----
+
+Create the Kubelet systemd unit file by writing the following contents to a file named kubelet.service:
+
+----
+# /etc/systemd/system/kubelet.service
+
+[Unit]
+Description=Kubernetes Kubelet
+Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+After=docker.service
+Requires=docker.service
+
+[Service]
+ExecStartPre=/bin/mkdir -p /etc/kubernetes/manifests
+ExecStart=/usr/local/bin/kubelet \
+  --api-servers=http://node0:8080 \
+  --allow-privileged=true \
+  --cluster-dns=10.200.100.10 \
+  --cluster-domain=cluster.local \
+  --config=/etc/kubernetes/manifests
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+----
+
+Move the kubelet systemd unit file to the local systemd configuration path:
+
+----
+$ sudo mv kubelet.service /etc/systemd/system/
+----
+
+Start the kubelet service:
+
+----
+$ sudo systemctl daemon-reload   # reloads systemd loading any changes
+$ sudo systemctl enable kubelet  # allows startup on boot
+$ sudo systemctl start kubelet   # starts the service
+----
+
+Repeat the above steps for the other three nodes (node1, node2, and node3).
+
+==== Configuring the Network
+
+Now that each node has a Docker daemon configured with a unique bridge IP, routing must be setup between the nodes. Routing is an advanced concept, but at a high level each bridge IP requires a route entry. There are many options for setting up routes between nodes including the following:
+
+* static routes on each node
+* static routes on a central router or default gateway
+* use an overlay network
+
+In this chapter we will leverage static routes on a central router. See Appendix X for more details on setting up other routing configurations including overlay networks.
+
+In the lab I ran the following commands to establish routes between each node:
+
+----
+$ gcloud compute routes create default-route-10-200-0-0-24 \
+    --destination-range 10.200.0.0/24 \
+    --next-hop-instance node0
+
+$ gcloud compute routes create default-route-10-200-1-0-24 \
+    --destination-range 10.200.1.0/24 \
+    --next-hop-instance node1
+
+$ gcloud compute routes create default-route-10-200-2-0-24 \
+    --destination-range 10.200.2.0/24 \
+    --next-hop-instance node2
+
+$ gcloud compute routes create default-route-10-200-3-0-24 \
+    --destination-range 10.200.3.0/24 \
+    --next-hop-instance node3
+----
+
+The +gcloud compute routes+ command configures the routing table in the lab to route the Docker bridge IP (bip) to the correct node as defined in the Docker Bridge Mapping table.
+
+===== Getting Containers Online
+
+Network Address Translation footnote:[Network Address Translation (NAT) is a way to map an entire network to a single IP address.] is used to ensure containers have access to the internet. This is often necessary because many hosting providers will not route outbound traffic for IPs that don't originate from the host IP. To work around this containers must "masquerade" under the host IP, but we only want to do this for traffic not destined to other containers or nodes in the cluster.
+
+In the lab we have disabled the Docker daemon's ability to manage iptables footnote:[iptables is service maintaining rules for the Linux kernel firewall] in favor of the Kubernetes proxy doing all the heavy lifting. Since the proxy does not know anything about the Docker bridge IP or the topology of our network, it does not attempt to setup NAT rules.
+
+On _each node_ add a NAT rule for outbound container traffic:
+
+----
+$ sudo iptables -t nat -A POSTROUTING ! -d 10.0.0.0/8 -o eth0 -j MASQUERADE
+----
+
+[NOTE]
+====
+In the lab, the outbound interface to the public network is eth0, be sure to change this to match your environment.
+====
+
+===== Validating the Networking Configuration
+
+Using the Docker command line client we can start two containers running on different hosts and validate our network setup. First login to node0:
+
+----
+$ gcloud compute ssh node0
+----
+
+Start a busybox container using the `docker run` command:
+
+----
+$ sudo docker run -t -i --rm busybox /bin/sh
+----
+
+.docker command
+****
+This particular `docker` command starts a container that is capable of receiving standard input from a controlling terminal. The container will also be removed once it is stopped (when you exit the terminal).
+****
+
+.sudo command
+****
+You will notice that the remainder of this book will often reference the superuser command program `sudo` when interacting with docker. This is because the user (you) which gcloud has ssh'd onto the node does not belong in the docker group. To remedy this execute the following:
+
+....
+$ sudo groupadd docker
+$ sudo usermod -aG docker $(whoami)
+$ sudo systemctl restart docker
+$ docker ps  # command should work under the current user
+>>
+CONTAINER ID   IMAGE     COMMAND     CREATED      STATUS     PORT     NAMES
+....
+****
+
+At this point you are now running inside a busybox container. Show the IP address of the container using the `ip` command and interface `eth0`:
+
+----
+# ip -f inet addr show eth0
+----
+
+----
+4: eth0: <BROADCAST,UP,LOWER_UP> mtu 1460 qdisc noqueue state UP group default
+    inet 10.200.0.2/24 scope global eth0
+       valid_lft forever preferred_lft forever
+----
+
+Open another terminal and launch a busybox container on a different node:
+
+----
+$ gcloud compute ssh node1
+----
+
+Start a new busybox container on node1:
+
+----
+$ sudo docker run -t -i --rm busybox /bin/sh
+----
+
+At the command prompt ping the IP address of the first busybox container:
+
+----
+# ping -c 3 10.200.0.2
+----
+
+----
+PING 10.200.0.2 (10.200.0.2): 56 data bytes
+64 bytes from 10.200.0.2: seq=0 ttl=62 time=0.914 ms
+64 bytes from 10.200.0.2: seq=1 ttl=62 time=0.678 ms
+64 bytes from 10.200.0.2: seq=2 ttl=62 time=0.667 ms
+
+--- 10.200.0.2 ping statistics ---
+3 packets transmitted, 3 packets received, 0% packet loss
+round-trip min/avg/max = 0.667/0.753/0.914 ms
+----
+
+If you get simliar output it means you've successfully setup routes between two Docker hosts. Type the +exit+ command at both busybox command prompts to exit the containers.
+
+=== Bootstrapping the Kubernetes Controller Node
+
+In the lab node0 has been marked as the controller node for the Kubernetes cluster, and will host the controller services in addition to etcd. All controller services will be managed using pods running under the Kubelet.
+
+Start by logging into the controller node:
+
+----
+$ gcloud compute ssh node0
+----
+
+==== etcd
+
+Create the etcd pod manifest:
+
+----
+# /etc/kubernetes/manifests/etcd-pod.yaml
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: etcd
+spec:
+  hostNetwork: true
+  volumes:
+    - name: "etcd-datadir"
+      hostPath:
+        path: "/var/lib/etcd"
+  containers:
+    - name: "etcd"
+      image: "b.gcr.io/kuar/etcd:2.2.0"
+      args:
+        - "--data-dir=/var/lib/etcd"
+        - "--advertise-client-urls=http://127.0.0.1:2379"
+        - "--listen-client-urls=http://127.0.0.1:2379"
+        - "--listen-peer-urls=http://127.0.0.1:2380"
+        - "--name=etcd"
+      volumeMounts:
+        - mountPath: /var/lib/etcd
+          name: "etcd-datadir"
+----
+
+Move the etcd pod manifest to the local kubelet pod manifest directory:
+
+----
+$ sudo mv etcd-pod.yaml /etc/kubernetes/manifests/
+----
+
+[NOTE]
+====
+The full spec and definition of the POD object can be found at: http://kubernetes.io/docs/api-reference/v1/definitions/#_v1_pod
+====
+
+==== API Server
+
+Create the kube-apiserver pod manifest by writing the following contents to a file named kube-apiserver-pod.yaml.
+
+----
+# /etc/kubernetes/manifests/kube-apiserver-pod.yaml
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kube-apiserver
+spec:
+  hostNetwork: true
+  containers:
+    - name: "kube-apiserver"
+      image: "b.gcr.io/kuar/kube-apiserver:1.0.6"
+      args:
+        - "--allow-privileged=true"
+        - "--etcd-servers=http://127.0.0.1:2379"
+        - "--insecure-bind-address=0.0.0.0"
+        - "--service-cluster-ip-range=10.200.100.0/24"
+        - "--service-node-port-range=30000-37000"
+----
+
+Move the kube-apiserver pod manifest to the local kubelet pod manifest directory:
+
+----
+$ sudo mv kube-apiserver-pod.yaml /etc/kubernetes/manifests/
+----
+
+==== Controller Manager
+
+Create the kube-controller-manager pod manifest by writing the following contents to a file named kube-controller-manager-pod.yaml.
+
+----
+# /etc/kubernetes/manifests/kube-controller-manager-pod.yaml
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kube-controller-manager
+spec:
+  hostNetwork: true
+  containers:
+    - name: "kube-controller-manager"
+      image: "b.gcr.io/kuar/kube-controller-manager:1.0.6"
+      args:
+        - "--master=http://127.0.0.1:8080"
+----
+
+Move the kube-controller-manager pod manifest to the local kubelet pod manifest directory:
+
+----
+$ sudo mv kube-controller-manager-pod.yaml /etc/kubernetes/manifests/
+----
+
+==== Scheduler
+
+Create the kube-scheduler pod manifest by writing the following contents to a file named kube-scheduler-pod.yaml:
+
+----
+# /etc/kubernetes/manifests/kube-scheduler-pod.yaml
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kube-scheduler
+spec:
+  hostNetwork: true
+  containers:
+    - name: "kube-scheduler"
+      image: "b.gcr.io/kuar/kube-scheduler:1.0.6"
+      args:
+        - "--master=http://127.0.0.1:8080"
+----
+
+Move the kube-scheduler pod manifest to the local kubelet manifest directory:
+
+----
+$ sudo mv kube-scheduler-pod.yaml /etc/kubernetes/manifests/
+----
+
+At this point the controller services are up and running on node0.
+
+==== Checking the Health of the Cluster Components
+
+There are 4 major cluster components that make up the Kubernetes controller set. More information about these components will follow in later chapters. For now, consider that these are pods managed by Kubernetes and as such their health status can be checked. The four components are:
+
+* api
+* controller-manager
+* scheduler
+* etcd
+
+The health of each component can be checked using the Kubernetes API. For example, use the curl command below we query the send a get request to the api server for the scheduler. A response is returned in json format which describes the status of the Kubernetes Scheduler along with additional metadata:
+
+----
+$ curl http://127.0.0.1:8080/api/v1/namespaces/default/componentstatuses/scheduler
+----
+
+Output:
+
+----
+{
+  "kind": "ComponentStatus",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "scheduler",
+    "selfLink": "/api/v1/namespaces/componentstatuses/scheduler",
+    "creationTimestamp": null
+  },
+  "conditions": [
+    {
+      "type": "Healthy",
+      "status": "True",
+      "message": "ok",
+      "error": "nil"
+    }
+  ]
+}
+----
+
+These particular results indicate the scheduler component is healthy. The status for the other components can be retrieved by replacing the component name in the query path like so:
+
+----
+/api/v1/namespaces/default/componentstatuses/{name}
+----
+
+[NOTE]
+====
+There is no component status endpoint for the API server. The ability to send requests and receive a valid response is enough to verify the health of the API server.
+
+To learn more about all the APIs available visit: http://kubernetes.io/docs/api-reference/v1/operations/
+====
+
+=== Bootstrapping Kubernetes Worker Nodes
+
+A Kubernetes worker node runs the following components:
+
+* docker
+* kubelet
+* kube-proxy
+
+Both docker and the kubelet have already been configured earlier in the chapter. The only component left to configure is the Kubernetes proxy.
+
+==== Service Proxy
+
+The Kubernetes proxy is a network proxy that is capable of handling various TCP/UDP streaming or round robin forwarding across the cluster. It runs on every node.
+
+Create the kube-proxy pod manifest by writing the following contents to a file named kube-proxy-pod.yaml for the current node you are logged into (node0).
+
+----
+# /etc/kubernetes/manifests/kube-proxy-pod.yaml
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kube-proxy
+  version: 1.0.6
+spec:
+  hostNetwork: true
+  volumes:
+    - name: "lib"
+      hostPath:
+        path: "/lib"
+    - name: "sbin"
+      hostPath:
+        path: "/sbin"
+    - name: "lib64"
+      hostPath:
+        path: "/lib64"
+  containers:
+    - name: "kube-proxy"
+      image: "b.gcr.io/kuar/kube-proxy:1.0.6"
+      args:
+        - "--master=http://node0:8080"
+      securityContext:
+        privileged: true
+      volumeMounts:
+        - mountPath: /lib
+          name: "lib"
+        - mountPath: /sbin
+          name: "sbin"
+        - mountPath: /lib64
+          name: "lib64"
+----
+
+Move the kube-proxy pod manifest to the local kubelet manifest directory:
+
+----
+$ sudo mv kube-proxy-pod.yaml /etc/kubernetes/manifests/
+----
+
+Repeat the above steps for the other nodes to complete the deployment of the worker nodes (node1, node2, node3).
+
+=== The Kubernetes Client
+
+The official Kubernetes client is `kubectl`: a command line tool for interacting with the Kubernetes API. `kubectl` can be used to manage most kubernetes objects such as pods, replication controllers, and services. `kubectl` can also be used to verify the overall health of the cluster.
+
+First log into the controller node if you are not already logged in:
+
+----
+$ gcloud compute ssh node0
+----
+
+==== Checking Cluster Component Status
+
+----
+$ kubectl get componentstatuses
+----
+
+Output:
+
+----
+NAME                 STATUS    MESSAGE              ERROR
+controller-manager   Healthy   ok                   nil
+scheduler            Healthy   ok                   nil
+etcd-0               Healthy   {"health": "true"}   nil
+----
+
+==== Listing Kubernetes Worker Nodes
+
+----
+$ kubectl get nodes
+----
+
+Output:
+
+----
+NAME      LABELS                         STATUS
+node0     kubernetes.io/hostname=node0   Ready
+node1     kubernetes.io/hostname=node1   Ready
+node2     kubernetes.io/hostname=node2   Ready
+node3     kubernetes.io/hostname=node3   Ready
+----
+
+Use the `kubectl describe` command to get more information about a specific node such as node0:
+
+----
+$ kubectl describe nodes node0
+----
+
+Output:
+
+----
+Name:			node0
+Labels:			kubernetes.io/hostname=node0
+Addresses:	10.240.0.2
+Capacity:
+ pods:		40
+ cpu:		1
+ memory:	3794264Ki
+Version:
+ Kernel Version:		4.1.0-0.bpo.2-amd64
+ OS Image:			Debian GNU/Linux 8 (jessie)
+ Container Runtime Version:	docker://1.8.2
+ Kubelet Version:		v1.0.6
+ Kube-Proxy Version:		v1.0.6
+ExternalID:			node0
+Pods:				(5 in total)
+  Namespace			Name
+  default			etcd-node0
+  default			kube-apiserver-node0
+  default			kube-controller-manager-node0
+  default			kube-proxy-node0
+  default			kube-scheduler-node0
+----
+
+At this point we have a working Kubernetes cluster.
+
+=== Cluster Add-ons
+
+Kubernetes ships with additional functionality through cluster add-ons, which are a collection of Services and Replication Controllers (with pods) that extend the utility of your cluster. While cluster add-ons are not strictly required, they are considered an inherent part of a Kubernetes cluster.
+
+There are four primary cluster add-ons:
+
+* Cluster monitoring
+* DNS
+* Kubernetes UI
+* Logging
+
+We'll cover the Kubernetes UI add-on in this chapter and defer DNS, monitoring, and logging until the discussion on cluster administration later in the book.
+
+==== Kubernetes UI
+
+The Kubernetes UI provides a read-only web console for viewing the current state of the cluster. It provides a view into the monitoring of node resource utilization along with any cluster events. `kubectl` can be used to deploy the `kube-ui` add-on.
+
+Create the Kubernetes UI replication controller by writing the following contents to a file named kube-ui-rc.yaml within `~/kubernetes/addons/`
+
+----
+# ~/kubernetes/addons/kube-ui-rc.yaml:
+
+apiVersion: v1
+kind: ReplicationController
+metadata:
+  name: kube-ui-v2
+  namespace: kube-system
+  labels:
+    k8s-app: kube-ui
+    version: v2
+    kubernetes.io/cluster-service: "true"
+spec:
+  replicas: 1
+  selector:
+    k8s-app: kube-ui
+    version: v2
+  template:
+    metadata:
+      labels:
+        k8s-app: kube-ui
+        version: v2
+        kubernetes.io/cluster-service: "true"
+    spec:
+      containers:
+      - name: kube-ui
+        image: gcr.io/google_containers/kube-ui:v2
+        resources:
+          limits:
+            cpu: 100m
+            memory: 50Mi
+        ports:
+        - containerPort: 8080
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 30
+          timeoutSeconds: 5
+----
+
+Launch a Kubernetes UI replication controller:
+
+----
+$ kubectl create -f ~/kubernetes/addons/kube-ui-rc.yaml
+# or alternatively cd into ~/kubernetes/addons/, and run `kubectl create -f kube-ui-rc.yaml`
+----
+
+Next create the Kubernetes UI service by writing the following contents to a file named `kube-ui-svc.yaml` within `~/kubernetes/addons/`.
+
+----
+# ~/kubernetes/addons/kube-ui-svc.yaml
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: kube-ui
+  namespace: kube-system
+  labels:
+    k8s-app: kube-ui
+    kubernetes.io/cluster-service: "true"
+    kubernetes.io/name: "KubeUI"
+spec:
+  selector:
+    k8s-app: kube-ui
+  ports:
+  - port: 80
+    targetPort: 8080
+----
+
+Create the Kubernetes UI service:
+
+----
+$ kubectl create -f ~/kubernetes/addons/kube-ui-svc.yaml
+# or alternatively cd into ~/kubernetes/addons/, and run `kubectl create -f kube-ui-svc.yaml`
+
+----
+
+At this point the Kubernetes UI add-on should be up and running. The Kubernetes API server provides access to the UI via the /ui endpoint. However the Kubernetes API is not accessible remotely due to the lack of security.
+
+.Use kubectl
+****
+Now is a great time to try and use the kubectl command to retrieve information rather than deploy. Try the command below, you should see entries for the work you've done up to this point.
+
+$ kubectl get pods,services,replicationcontrollers
+
+****
+
+==== Securely Exposing the API Server
+
+Instead of exposing the API server to the public internet over an insecure port, a SSH tunnel can be used to create between the remote client and API server.
+
+Create a SSH tunnel between a remote client machine and the controller node:
+
+----
+$ ssh -f -nNT -L 8080:127.0.0.1:8080 kelseyhightower@<node0-external-ip>
+----
+
+The UI should be available at http://127.0.0.1:8080/api/v1/proxy/namespaces/kube-system/services/kube-ui/#/ dashboard/ on the client machine.
+
+image::images/kubernetes-ui-screenshot.png["Screenshot of the Kubernetes UI"]
+
+=== Summary
+
+Now that's how you bootstrap a Kubernetes cluster! At this point you have a multi-node Kubernetes cluster with a single controller node and three workers. Adding additional workers is a matter of provisioning new machines and repeating the steps above to add instances of the kubelet and proxy services. It should also be noted that the cluster setup in this chapter lacks proper security and high-availability for the controller components. Both these topics will be addressed in later chapters. In the meanwhile don't expose the Kubernetes API or Kubelet endpoints on the public internet.
+
+By manually setting up your cluster you now have a better understanding of the components and details of Kubernetes. However, you should consider automating the bootstrap process, especially in large scale environments. What's the point of a cluster if you have to hand-roll each node?

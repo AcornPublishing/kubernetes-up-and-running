@@ -1,0 +1,12 @@
+<section data-type="colophon" class="abouttheauthor">
+  <h1>About the Author</h1>
+  <p><strong>Kelsey Hightower</strong> is currently an Engineer and Advocate at CoreOS, Inc. His career has spanned system administration, software development, and engineering leadership across a wide range of industries including finance, web hosting, and tech startups.</p>
+
+<p>Kelsey is a core contributor to the Kubernetes opensource project and an advocate of distributed computing. He holds a strong belief that everyone should have access to Google-style infrastructure regardless of scale. In addition to hacking on Kubernetes, Kelsey maintains a small collection of opensource projects aimed at accelerating the adoption of new technologies such as Kubernetes, Docker, and etcd.</p>
+
+<p>When not writing code Kelsey enjoys public speaking and has spoken at several dozen Tech conferences around the world on subjects ranging from configuration management to distributed computing.</p>
+
+<p>Outside of work, Kelsey is a husband and caring father who loves spending his free time reading classic scifi novels and destroying opponents in a friendly game of Magic the Gathering.</p>
+</section>
+
+

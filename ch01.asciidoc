@@ -1,0 +1,428 @@
+[[introduction]]
+[role="pagenumrestart"]
+== Introduction
+
+Kubernetes is an open source orchestrator for deploying containerized
+applications. Kubernetes was originally developed by Google, inspired
+by a decade of experience deploying scalable, reliable systems in
+containers via application-oriented APIs.pass:[<span data-type="footnote">Brendan Burns et al., "Borg, Omega, and Kubernetes: Lessons Learned from Three Container-Management Systems over a Decade," <em>ACM Queue</em> 14 (2016): 70–93, available at <em>http://bit.ly/2vIrL4S</em>.</span>]
+
+But Kubernetes is much more than simply exporting technology developed at Google. Kubernetes has grown to be the product of a rich and growing open source community. This means that Kubernetes is a product that is suited not just to the needs of internet-scale companies but to cloud-native developers of all scales, from a cluster of Raspberry Pi computers to a warehouse full of the latest machines. Kubernetes provides the software necessary to successfully build and deploy reliable, scalable distributed systems.
+
+You may be wondering what we mean when we say "reliable, scalable distributed systems." More and more services are delivered
+over the network via APIs. These APIs are often delivered by ((("distributed system")))a _distributed system_, the various pieces that implement the API running on different machines, connected via the network and
+coordinating their actions via network communication. Because we
+rely on these APIs increasingly for all aspects of our daily lives
+(e.g., finding directions to the nearest hospital), these systems must
+be highly _reliable_. They cannot fail, even if a part of the system
+crashes or otherwise fails. Likewise, they must maintain _availability_
+even during software rollouts or other maintenance events. Finally,
+because more and more of the world is coming online and using such
+services, they must be highly _scalable_ so that they can grow their capacity to keep up with ever-increasing usage without radical redesign
+of the distributed system that implements the services.
+
+Depending on when and why you have come to hold this book in your hands,
+you may have varying degrees of experience with containers, distributed
+systems, and Kubernetes. Regardless of what your experience is, we
+believe this book will enable you to make the most of your use
+of Kubernetes.
+
+There are many reasons why people come to use ((("containers", "benefits of", id="containers-benefitsof")))containers and container
+APIs like Kubernetes, but we believe they effectively all can
+be traced back to one of these ((("Kubernetes", "benefits of", id="Kubernetes-benefitsof")))benefits:
+
+* Velocity
+* Scaling (of both software and teams)
+* Abstracting your infrastructure
+* Efficiency
+
+In the following sections we describe how Kubernetes can help provide
+each of these benefits.
+
+=== Velocity
+Velocity ((("velocity", id="velocity")))is the key component in nearly all software development today. The changing nature of software from boxed software
+shipped on CDs to web-based services that change every few hours means
+that the difference between you and your competitors is often the
+speed with which you can develop and deploy new components and features.
+
+It is important to note, however, that this velocity is not defined
+in terms of simply raw speed. While your users are always looking
+for iterative improvement, they are more interested in a highly reliable service. Once upon a time, it was OK for a
+service to be down for maintenance at midnight every night. But today, our users expect constant uptime,
+even if the software they are running is changing constantly.
+
+Consequently, velocity is measured not in terms of the raw number
+of features you can ship per hour or day, but rather in terms
+of the number of things you can ship while maintaining a highly
+available service.
+
+In this way, containers and Kubernetes can provide the tools that
+you need to move quickly, while staying available. The
+core concepts that enable this are immutability, declarative
+configuration, and online self-healing systems. These ideas all
+interrelate to radically improve the speed with which you can
+reliably deploy software.
+
+==== The Value of Immutability
+Containers ((("velocity", "value of immutability", id="velocity-valueofimmutability")))and ((("value of immutability", id="valueofimmutability")))Kubernetes ((("immutability, value of", id="immutability-valueof")))encourage developers to build distributed systems that adhere to the principles of immutable infrastructure. With immutable infrastructure, once an artifact is created in the system it does not change
+via user modifications.
+
+Traditionally, computers and software systems have been treated ((("mutable infrastructure")))as _mutable_ infrastructure. With mutable infrastructure, changes are applied as incremental updates to an existing system. A system upgrade via the +apt-get update+ tool is a good example of an update to a mutable system. Running +apt+ sequentially downloads any updated binaries, copies them on top of older binaries, and makes incremental updates to configuration files. With a mutable system, the current state of the infrastructure is not represented as a single artifact, but rather an accumulation of incremental updates and changes. On many systems these incremental updates come from not just system upgrades but operator modifications as well.
+
+In contrast, in an ((("apt-get update tool")))immutable system, rather than a series of incremental updates and changes, an entirely new, complete image is built, where the update simply replaces the entire image with the newer image in a single operation. There are no incremental changes. As you can imagine, this is a significant shift from the more traditional world of configuration management.
+
+To make this more concrete in the world of containers, consider two different ways to upgrade your software:
+
+. You can log into a container, run a command to download your new software, kill the old server, and start the new one.
+
+. You can build a new container image, push it to a container registry, kill the existing container, and start a new one.
+
+At first blush, these two approaches might seem largely
+indistinguishable. So what is it about the act ((("new container, building")))of building a new container that
+improves reliability?
+
+The key differentiation is the artifact that you create,
+and the record of how you created it. These records make it
+easy to understand exactly the differences in some new version and, if something goes wrong, determine what has changed and how to fix it.
+
+Additionally, building a new image rather than modifying
+an existing one means the old image is still around, and can quickly be
+used for ((("rollback", "of image using immutable infrastructure")))a rollback if an error occurs. In contrast, once you copy
+your new binary over an existing binary, such rollback is
+nearly impossible.
+
+Immutable container images are at the core of everything that
+you will build in Kubernetes. It is possible to imperatively
+change running containers, but this is an antipattern to be used
+only in extreme cases where there are no other options (e.g., if it is the only way to temporarily repair a mission-critical production system). And even then, the changes must also be recorded through a declarative configuration update at some later time, after the ((("immutability, value of", startref="immutability-valueof")))fire((("value of immutability", startref="valueofimmutability"))) is ((("velocity", "value of immutability", startref="velocity-valueofimmutability")))out.
+
+==== Declarative Configuration
+Immutability ((("velocity", "declarative configuration")))extends((("declarative configuration"))) beyond((("configuration, declarative"))) containers running in your cluster to the way you describe your application to Kubernetes. Everything in Kubernetes is a _declarative configuration object_ that represents the desired state of the system. It is Kubernetes's job to ensure that the actual state of the world matches this desired state.
+
+Much like mutable versus immutable infrastructure, declarative configuration is an alternative ((("imperative configuration")))to _imperative_ configuration, where the state of the world is defined by the execution of a series of instructions rather than a declaration of the desired state of the world. While imperative commands define actions, declarative configurations define state.
+
+To understand these two approaches, consider the task of producing
+three replicas of a piece of software. With an imperative approach,
+the configuration would say: "run A, run B, and run C." The corresponding declarative configuration would be "replicas equals three."
+
+Because it describes the state of the world, declarative configuration does not have to be executed to be understood. Its impact is concretely declared. Since the effects of declarative configuration can be understood before they are executed, declarative configuration is far less error-prone. Further, the traditional tools of software development, such as source control, code review, and unit testing, can
+be used in declarative configuration in ways that are impossible for imperative instructions.
+
+//Additionally, much like immutable images, declarative configurations are
+//much easier to reliably replicate, which means that the process of
+//deploying and managing your application in multiple regions or
+//enviroments is significantly easier and more reliable.
+
+The combination of declarative state stored in a version control system and Kubernetes's ability to make reality match this declarative state makes ((("rollback", "of change using declarative configuration")))rollback of a change trivially easy. It is simply restating the previous
+declarative state of the system. With imperative systems this is
+usually impossible, since while the imperative instructions describe
+how to get you from point 'A' to point 'B', they rarely include the
+reverse instructions that can get you back.
+
+==== Self-Healing Systems
+Kubernetes ((("velocity", "self-healing systems", id="velocity-self-healingsystems")))is ((("self-healing systems", id="self-healingsystems")))an online, self-healing system. When it receives a desired state
+configuration, it does not simply take actions to make the current
+state match the desired state a single time. It continuously takes
+actions to ensure that the current state matches the desired state.
+This means that not only will Kubernetes initialize your system, but it
+will guard it against any failures or perturbations that might
+destabilize your system and affect reliability.
+
+A more traditional operator repair involves a manual series of mitigation steps, or human intervention performed in response to some sort of alert. Imperative repair like this is more expensive (since it generally requires an on-call operator to be available to enact the repair). It is also generally slower, since a human must often wake up and log in to respond. Furthermore, it is less reliable since the imperative series of repair operations suffer from all of the problems of imperative management described in the previous section. Self-healing systems like Kubernetes both reduce the burden on operators and improve the overall reliability of the system by performing reliable repairs more quickly.
+
+As a concrete example of this self-healing behavior, if you assert a desired state of three replicas to Kubernetes, it does not just create three replicas--it continuously ensures that there are exactly three replicas. If you manually create a fourth replica Kubernetes will destroy one to bring the number back to three. If you manually destroy a replica, Kubernetes will create one to again return you to the desired state.
+
+Online self-healing systems improve developer velocity because the
+time and energy you might otherwise have spent on operations and
+maintenance can instead be spent on developing and ((("self-healing systems", startref="self-healingsystems")))testing ((("velocity", "self-healing systems", startref="velocity-self-healingsystems")))new ((("velocity", startref="velocity")))features.
+
+=== Scaling Your Service and Your Teams
+As ((("scaling", "services and teams", "decoupling", id="scaling-servicesandteams-decoupling")))your ((("teams, scaling", "decoupling", id="teams-scaling-decoupling")))product ((("services", "scaling", "decoupling", id="services-scaling-decoupling")))grows, ((("scaling", "services and teams", id="scaling-servicesandteams")))its ((("teams, scaling", id="teams-scaling")))inevitable ((("services", id="services")))that you will need to scale both
+your software and the teams that develop it. Fortunately, Kubernetes
+can help with both of these goals. Kubernetes achieves scalability by favoring _decoupled_ architectures.
+
+==== Decoupling
+In a decoupled architecture each component is separated from other components by ((("decoupling", "load balancers")))defined APIs and service load balancers. APIs and load balancers isolate each piece of the system from the others. APIs provide a buffer between implementer and consumer, and load balancers provide a buffer between running instances of each service.
+
+Decoupling components via load balancers
+((("decoupling", "components via load balancers")))makes it easy to scale the programs that make
+up your service, because increasing the size (and therefore the capacity) of the program can be done without adjusting or reconfiguring
+any of the other layers of your service.
+
+Decoupling servers via APIs ((("decoupling", "servers via APIs")))makes ((("decoupling", "APIs")))it easier to scale the development teams
+because each team can focus on a single, smaller _microservice_ with
+a comprehensible surface area. Crisp  APIs between microservices limit
+the amount of cross-team communication overhead required to build
+and deploy software. This communication overhead is often the major
+restricting factor when scaling teams.
+
+//Kubernetes helps make it easier to
+//literally scale both the applications and resources that power those
+//applications. It encourages decoupled architectures where each //component is separated from other components by defined APIs and service load
+//balancers. This enforced separation reduces the connections between //layers in a system to well defined and understood interfaces which
+//increases the agility of the individual teams since they can make
+//changes without having to worry about how those changes might
+//impact a dependent piece of the system. This in turn makes both scaling
+//the infrastructure and scaling the development teams easier.
+//This architectural separation of concerns
+//isolates teams in a positive way that encourages autonomy,
+//responsibility and agility. We'll discuss each of ((("services", "scaling", "decoupling", startref="services-scaling-decoupling")))these ((("teams, scaling", "decoupling", startref="teams-scaling-decoupling")))in ((("scaling", "services and teams", "decoupling", startref="scaling-servicesandteams-decoupling")))detail.
+
+==== Easy Scaling for Applications and Clusters
+
+Concretely, ((("scaling", "services and teams", "applications and clusters")))when ((("teams, scaling", "applications and clusters")))you ((("services", "scaling", "applications and clusters")))need to scale your service, the immutable,
+declarative nature of Kubernetes makes this scaling trivial to
+implement. Because your containers are immutable, and the number of
+replicas is simply a number in a declarative config, scaling your
+service upward is simply a matter of changing a number in a
+configuration file, asserting this new declarative state to Kubernetes,
+and letting it take care of the rest. Alternately, you can set up
+((("scaling", "autoscaling")))autoscaling and simply let Kubernetes take care of it for you.
+
+Of course, that sort of scaling assumes that there are resources
+available in your cluster to consume. Sometimes you actually need to
+scale up the cluster itself. Here again, Kubernetes makes this task
+easier. Because each machine in a cluster is entirely identical to
+every other machine, and the applications themselves are decoupled
+from the details of the machine by containers, adding additional
+resources to the cluster is simply a matter of imaging a new machine
+and joining it into the cluster. This can be accomplished via
+a few simple commands or via a prebaked machine image.
+
+One of the challenges of scaling machine resources is predicting their use. If you are running on physical
+infrastructure, the time to obtain a new machine is measured in days
+or weeks. On both physical and cloud infrastructure, predicting future costs is difficult because it is hard to predict the growth
+and scaling needs of specific applications.
+
+Kubernetes can simplify forecasting future compute costs. To
+understand why this is true, consider scaling up three teams, A, B,
+and C. Historically you have seen that each team's growth is highly
+variable and thus hard to predict. If you are provisioning individual
+machines for each service, you have no choice but to forecast based
+on the maximum expected growth for each service, since machines
+dedicated to one team cannot be used for another team. If instead
+you use Kubernetes to decouple the teams from the specific machines
+they are using, you can forecast growth based on the aggregate
+growth of all three services. Combining three variable
+growth rates into a single growth rate reduces statistical noise and
+produces a more reliable forecast of expected growth. Furthermore,
+decoupling the teams from specific machines means that teams can
+share fractional parts of each other's machines, reducing even further
+the overheads associated with forecasting growth of computing
+resources.
+
+==== Scaling Development Teams with Microservices
+
+As ((("scaling", "services and teams", "with microservices")))noted ((("teams, scaling", "with microservices")))in ((("services", "scaling", "microservices")))a variety of research, the ideal team size is the "two-pizza team," or roughly six to eight people, because this group size often results in good knowledge sharing, fast decision making, and a common sense of purpose. Larger teams tend to suffer from hierarchy, poor visibility, and infighting, which hinder agility and success.
+
+However, many projects require significantly more resources to be successful and achieve their goals. Consequently, there is a tension between the ideal team size for agility and the necessary team size for the product's end goals.
+
+The common solution to this tension has been the development
+of decoupled, service-oriented teams that each build a single
+microservice. Each small team is responsible for the design and delivery of a service that is consumed by other small teams. The aggregation of all of these services ultimately provides the implementation of the overall product's surface area.
+
+Kubernetes ((("decoupling", "microservices, colocation")))provides numerous abstractions and APIs that make it easier to build these decoupled microservice architectures.
+
+* Pods, or groups of containers, can group together container images developed by different teams into a single deployable unit.
+
+* Kubernetes services provide load balancing, naming, and discovery to isolate one microservice from another.
+
+* Namespaces provide isolation and access control, so that each microservice can control the degree to which other services interact with it.
+
+* Ingress objects provide an easy-to-use frontend that can combine multiple microservices into a single externalized API surface area.
+
+Finally, decoupling the application container image and machine means that different ((("microservice architecture")))microservices can colocate on the same machine without interfering with each other, reducing the overhead and cost of microservice architectures. The health-checking and rollout features of Kubernetes guarantee a consistent approach to application rollout and reliability that ensures that a proliferation of microservice teams does not also result in a proliferation of different approaches to service production lifecycle and operations.
+
+==== Separation of Concerns for Consistency and Scaling
+
+In ((("scaling", "services and teams", "separation of concerns for", id="scaling-servicesandteams-separationofconcernsfor")))addition ((("services", "scaling", "separation of concerns for", id="services-scaling-separationofconcernsfor")))to ((("teams, scaling", "separation of concerns for", id="teams-scaling-separationofconcernsfor")))the ((("separation of concerns")))consistency that Kubernetes brings to operations,
+the decoupling and separation of concerns produced by the Kubernetes
+stack lead to significantly greater consistency for the lower ((("service-level agreement")))levels
+of your infrastructure. This enables your operations function to scale to managing many machines with a single small, focused team. We have talked at length about the decoupling of application container and
+machine/operating system (OS), but an important aspect of this decoupling is that the container orchestration API becomes a crisp contract that separates the responsibilities of the application operator from the cluster orchestration operator. We call this the "not my monkey, not my circus" line. The application developer relies on the service-level agreement (SLA) delivered by the container orchestration API, without worrying about the details of how this SLA is achieved. Likewise, the container orchestration API reliability engineer focuses on delivering the orchestration API's SLA without worrying about the applications that are running on top of it.
+
+This decoupling of concerns means that a small team running a Kubernetes cluster can be responsible for supporting hundreds or even thousands of teams running applications within that cluster (<<fig0101>>). Likewise, a small team can be responsible for tens (or more) of clusters running around the world. It's important to note that the same decoupling of containers and OS enables the OS reliability engineers to focus on the SLA of the individual machine's OS. This becomes another line of separate responsibility, with the Kubernetes operators relying on the OS SLA, and the OS operators worrying solely about delivering that SLA. Again, this enables you to scale a small team of OS experts to a fleet of thousands of machines.
+
+[[fig0101]]
+.An illustration of how different operations teams are decoupled using APIs
+image::images/kuar_0101.png[decoupled-ops.png]
+
+
+Of course, devoting even a small team to managing an OS is beyond the scale of many organizations. In these environments, a managed ((("Kubernetes-as-a-Service (KaaS)")))Kubernetes-as-a-Service (KaaS) ((("KaaS (Kubernetes-as-a-Service)")))provided by a public cloud provider is a great option.
+
+[NOTE]
+====
+At the time of writing, you can use managed KaaS on Microsoft Azure, with Azure Container Service, as well as on the Google Cloud Platform via the Google Container Engine (GCE). There is no equivalent service available on Amazon Web Services (AWS), though the +kops+ project provides tools for easy installation and management of Kubernetes on AWS  (see <<installing-kubernetes-on-aws>>).
+====
+
+The decision of whether to use KaaS or manage it yourself is one each user needs to make based on the skills and demands of their situation. Often for small organizations, KaaS provides an easy-to-use solution that enables them to focus their time and energy on building the software to support their work rather than managing a cluster. For a larger organization that can afford a dedicated team for managing its Kubernetes cluster, it may make sense to manage it yourself since it enables greater flexibility in ((("teams, scaling", "separation of concerns for", startref="teams-scaling-separationofconcernsfor")))terms ((("services", "scaling", "separation of concerns for", startref="services-scaling-separationofconcernsfor")))of ((("scaling", "services and teams", "separation of concerns for", startref="scaling-servicesandteams-separationofconcernsfor")))cluster ((("services", startref="services")))capabilities ((("teams, scaling", startref="teams-scaling")))and ((("scaling", "services and teams", startref="scaling-servicesandteams")))operations.
+
+=== Abstracting Your Infrastructure
+
+The ((("abstracting infrastructure")))goal of the public cloud is to provide ((("plugins")))easy-to-use, self-service infrastructure for developers to consume. However, too often cloud APIs are oriented around mirroring the infrastructure that IT
+expects, not the concepts (e.g., "virtual machines" instead of "applications") that developers want to consume. Additionally,
+in many cases the cloud comes with particular details in implementation
+or services that are specific to the cloud provider. Consuming these
+APIs directly makes it difficult to run your application in multiple environments, or spread between cloud and physical environments.
+
+The move to application-oriented container APIs like Kubernetes has
+two concrete benefits. First, as we described previously, it separates developers from specific machines. This not only makes the
+machine-oriented IT role easier, since machines can simply be added in
+aggregate to scale the cluster, but in the context of the cloud it
+also enables a high degree of portability since developers are consuming
+a higher-level API that is implemented in terms of the specific cloud
+infrastructure APIs.
+
+When your developers build their applications in terms of container
+images and deploy them in terms of portable Kubernetes APIs,
+transferring your application between environments, or even running
+in hybrid environments, is simply a matter of sending the declarative
+config to a new cluster. Kubernetes has a number of plug-ins that
+can abstract you from a particular cloud. For example, Kubernetes
+services know how to create load balancers on all major public clouds
+as well as several different private and physical infrastructures.
+Likewise, Kubernetes ++PersistentVolume++s and pass:[<span class="keep-together"><code>PersistentVolumeClaim</code>s</span>] can be used to abstract your applications away from specific storage implementations. Of course, to achieve this portability you need to avoid cloud-managed services (e.g., Amazon's DynamoDB or Google's Cloud Spanner), which means that you will be forced to deploy and manage open source storage solutions like Cassandra, MySQL, or MongoDB.
+
+Putting it all together, building on top of Kubernetes's application-oriented abstractions ensures that the effort that you put into building, deploying, and managing your application is truly portable across a wide variety of environments.
+
+=== Efficiency
+In addition ((("efficiency")))to the developer and IT management benefits that containers and Kubernetes provide, there is also a concrete economic benefit to the abstraction. Because developers no longer think in terms of machines, their applications can be colocated on the same machines without impacting the applications themselves. This means that tasks from multiple users can be packed tightly onto fewer machines.
+
+Efficiency can be measured by the ratio of the useful work performed by a machine or process to the total amount of energy spent doing so. When it comes to deploying and managing applications, many of the available tools and processes (e.g., bash scripts, +apt+ updates, or imperative configuration management) are somewhat inefficient. When discussing efficiency it's often helpful to think of both the cost of running a server and the human cost required to manage it.
+
+Running a server incurs a cost based on power usage, cooling requirements, data center space, and raw compute power. Once a server is racked and powered on (or clicked and spun up), the meter literally starts running. Any idle CPU time is money wasted. Thus, it becomes part of the system administrator's responsibilities to keep utilization at acceptable levels, which requires ongoing management. This is where containers and the Kubernetes workflow come in. Kubernetes provides tools that automate the distribution of applications across a cluster of machines, ensuring higher levels of utilization than are possible with traditional ((("Kubernetes", "benefits of", startref="Kubernetes-benefitsof")))tooling.
+
+A further increase in efficiency comes from the fact that a developer's
+test environment can be quickly and cheaply created as a set of ((("containers", "benefits of", startref="containers-benefitsof")))containers running in a personal view of a shared Kubernetes cluster ((("namespaces")))(using a feature called _namespaces_). In the past, turning up a test cluster for a developer might have meant turning up three machines. With Kubernetes it is simple to have all developers share a single test cluster, aggregating their usage onto a much smaller set of machines. Reducing the overall number of machines used in turn drives up the efficiency of each system: since more of the resources (CPU, RAM, etc.) on each individual machine are used, the overall cost of each container becomes much lower.
+
+Reducing the cost of development instances in your stack enables development practices that might previously have been cost-prohibitive. For example, with your application deployed via Kubernetes it becomes conceivable to deploy and test every single commit contributed by every developer throughout your entire stack.
+
+When the cost of each deployment is measured in terms of a small number of containers, rather than multiple complete virtual machines (VMs), the cost you incur for such testing is dramatically lower. Returning to the original value of Kubernetes, this increased testing also increases velocity, since you have both strong signals as to the reliability of your code as well as the granularity of detail required to quickly identify where a problem may have been introduced.
+
+=== Summary
+Kubernetes was built to radically change the way that applications are
+built and deployed in the cloud. Fundamentally, it was designed to give
+developers more velocity, efficiency, and agility. We hope the preceding sections have given you an idea of why you should deploy your
+applications using Kubernetes. Now that you are convinced of that, the
+following chapters will teach you _how_ to deploy your application.
+
+// More datails here.
+
+
+////
+== THE OLD TEXT FOLLOWS, RETAINED FOR NOW FOR COMPLETENESS, EVENTUALLY DELETE.
+
+== Introduction
+
+Kubernetes is an open source automation framework for deploying, managing, and scaling applications. It is the essence of an internal Google project known as Borg footnote:[Large-scale cluster management at Google with Borg: http://research.google.com/pubs/pub43438.html], infused with the lessons learned from over a decade of experience managing applications with Borg (and other internal frameworks) at scale.
+
+Google scale.
+
+But it is said that 99% of the world will never reach Google scale, and this raises the question: "Why should I care about Kubernetes?"
+
+One word: Efficiency.
+
+Efficiency can be measured by the ratio of the useful work performed by a machine or process to the total amount of energy spent doing so. When it comes to deploying and managing applications many of the tools and processes available are not what I would call efficient. When discussing efficiency it's often helpful to think of the cost of running a server, and the human cost required to manage it.
+
+Running a server incurs a cost based on power usage, cooling requirements, data center space, and raw compute power. Once a server is racked and powered on(or clicked and spun-up), the meter literally starts running. Any idle CPU time is money wasted. Thus, it becomes part of the system administrator's responsibilities to keep utilization at acceptable (ie high) levels, which requires ongoing management. This is where containers and the Kubernetes workflow come in. Kubernetes provides tools which automate the distribution of applications across a cluster of machines, ensuring higher levels of utilization than what is possible with traditional tooling.
+
+Once applications are deployed, humans are often employed to keep an eye on things, and hold the responsibility of responding to failures, managing application configurations, performing updates, and monitoring. Many of these tasks are handled using a collection of unrelated tools that lack synergy thus requiring one-off glue utilities to fill the gaps. Kubernetes provides a common API and self-healing framework which automatically handles machine failures and streamlines application deployments, logging, and monitoring.
+
+Why are things so inefficient?
+
+Think about the foundation on which many automation tools are built. Most tools stem from the days of the runbook. Runbooks held the exact details on how to deploy and configure an application on a target machine. Administrators would follow runbooks blindly and only after costly outages would runbooks be updated in an attempt to prevent future outages. But no matter how large the runbooks grew, the outages never stopped. Turns out the critical flaw in the system was the humans.
+
+See, people make mistakes. We make typos, fall asleep, or flat out skip a step or two. If only there was a way to remove the human element from the deployment process.
+
+Enter deployment scripts.
+
+Oh those were the good old days, we would write scripts for everything, which eventually made runbooks obsolete. If you wanted to deploy an application or update a configuration file, you ran a shell script on a specific machine. If you wanted to get _really_ fancy you could leverage SSH in a for loop and deploy an application to multiple systems at a time.
+
+Scripting application deployments started a movement known to some as Infrastructure as Code. This era of automation spawned a new class of management tools that I like to call scripting frameworks, which the industry at large calls configuration management. These configuration management systems provide a common set of reusable code that help people manage machines and the applications deployed to them. Configuration management moved the industry to faster application deployments and fewer mistakes. There was only one problem: software started eating the world.
+
+Even as the ability to deploy applications got faster, the efficiency of doing so did not improve very much. We exchanged runbooks and deployment meetings for Infrastructure as Code where you write software to deploy software. Which also means you need to follow software development processes for application management code.
+
+The other issue that is not as obvious to many is that configuration management, like the runbooks of yore, treat machines as first class citizens. "Applications are things that run on machines", says Config Management. "And machines belong to Applications", it states in redundant affirmation. The strong coupling between applications and machines has caused tools based on imperative scripting models to hit their maximum level of efficiency, especially compared to modern, robust, and scalable de-coupled approaches.
+
+=== Kubernetes Features
+
+Kubernetes centers around a common API for deploying all types of software ranging from web applications, batch jobs, and databases. This common API is based on a declarative set of APIs and cluster configuration objects that allow you to express a desired state for your cluster.
+
+Rather than manually deploying applications to specific servers, you describe the number of application instances that must be running at a given time. Kubernetes will perform the necessary actions to enforce the desired state. For example, if you declare 5 instances of your web application must be running at all times, and one of the nodes running an instance of the web application fails, Kubernetes will automatically reschedule the application on to another node.
+
+In addition to application scheduling, Kubernetes helps automate application configuration in the form of service discovery and secrets. Kubernetes keeps a global view of the entire cluster, which means once applications are deployed Kubernetes has the ability to track them, even in the event they are re-scheduled due to node failure. This service information is exposed to other apps through environment variables and DNS, making it easy for both cluster native and traditional applications to locate and communicate with other services running within the cluster.
+
+Kubernetes also provides a set of APIs that allows for custom deployment workflows such as rolling updates, canary deploys, and blue-green deployments.
+
+=== Kubernetes Design Overview
+
+Kubernetes aims to decouple applications from machines by leveraging the foundations of distributed computing and application containers. At a high level Kubernetes sits on top of a cluster of machines and provides an abstraction of a single machine.
+
+==== Concepts
+
+===== Clusters
+
+Clusters are the set of compute, storage, and network resources where pods are deployed, managed, and scaled. Clusters are made of nodes connected via a "flat" network, in which each node and pod can communicate with each other. A typical Kubernetes cluster size ranges from 1 - 200 nodes (and beyond up to 5000+), and it's common to have more than one Kubernetes cluster in a given data center based on node count and service SLAs.
+
+===== Pods
+
+Pods are a colocated group of application containers that share volumes and a networking stack. Pods are the smallest units that can be deployed within a Kubernetes cluster. They are used for run once jobs, can be deployed individually, but long running applications, such as web services, should be deployed and managed by a replication controller.
+
+===== ReplicaSets
+
+ReplicaSets ensure a specific number of pods, based on a template, are running at any given time. ReplicaSets manage pods based on labels and status updates.
+
+===== Deployments
+
+Deployments manage declaratively updating Pods and ReplicaSets in an orderly way.  Users can easily deploy new versions via a rolling update.  Deployments also make it simple to roll back to a previous configuration.
+
+===== Services
+
+Services deliver cluster wide service discovery and basic load balancing by providing a persistent name, address, or port for pods with a common set of labels.
+
+===== Labels
+
+Labels are used to organize and select groups of objects, such as pods, based on key/value pairs.
+
+==== The Kubernetes Control Plane
+
+The control plane is made up of a collection of components that work together to provide a unified view of the cluster.  While not required, oftentimes the control plane will run on a set of 1-5 dedicated nodes. But this is not required; the "master" nodes can also run real work in addition to the control plane.
+
+===== etcd
+
+etcd is a distributed, consistent key-value store for shared configuration and service discovery, with a focus on being: simple, secure, fast, and reliable. etcd uses the Raft consensus algorithm to achieve fault-tolerance and high-availability. etcd provides the ability to "watch" for changes, which allows for fast coordination between Kubernetes components. All persistent cluster state is stored in etcd.
+
+===== Kubernetes API Server
+
+The apiserver is responsible for serving the Kubernetes API and proxying cluster components such as the Kubernetes web UI. The apiserver exposes a REST interface that processes operations such as creating pods and services, and updating the corresponding objects in etcd. The apiserver is the only Kubernetes component that talks directly to etcd.
+
+===== Scheduler
+
+The scheduler watches the apiserver for unscheduled pods and schedules them onto healthy nodes based on resource requirements.
+
+===== Controller Manager
+
+There are other cluster-level functions such as managing service end-points, which is handled by the endpoints controller, and node lifecycle management which is handled by the node controller. When it comes to pods, replication controllers provide the ability to scale pods across a fleet of machines, and ensure the desired number of pods are always running.
+
+Each of these controllers currently live in a single process called the Controller Manager.
+
+==== The Kubernetes Node
+
+The Kubernetes node runs all the components necessary for running application containers and load balancing service end-points. Nodes are also responsible for reporting resource utilization and status information to the API server.
+
+===== Docker
+
+Docker, the container runtime engine, runs on every node and handles downloading and running containers. Docker is controlled locally via its API by the Kubelet.
+
+===== Kubelet
+
+Each node runs the Kubelet, which is responsible for node registration, and management of pods. The Kubelet watches the Kubernetes API server for pods to create as scheduled by the Scheduler, and pods to delete based on cluster events. The Kubelet also handles reporting resource utilization, and health status information for a specific node and the pods it's running.
+
+===== Proxy
+
+Each node also runs a simple network proxy with support for TCP and UDP stream forwarding across a set of pods as defined in the Kubernetes API.
+
+=== Summary
+
+Clustering is viewed by many as an unapproachable dark art, but hopefully the high level overviews and component breakdowns in this chapter have shone some light on the subject, hopefully the history of deployment automation has shown how far we've come, and hopefully the goals and design of Kubernetes have shown the path forward. In the next chapter we'll take our first step toward that path, and take a detailed look at setting up a multi-node Kubernetes cluster.
+////

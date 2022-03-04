@@ -1,0 +1,538 @@
+[[deploying_real_world_applications]]
+== Deploying Real-World Applications
+
+The ((("deploying real-world applications", id="deployingreal-worldapplications")))previous chapters described a variety of API objects that are available in a Kubernetes cluster and ways in which those objects can best be used to construct reliable distributed systems. However, none of the preceding chapters really discussed how you might use the objects in practice to deploy a complete, real-world application. That is the focus of this chapter.
+
+We'll take a look at three real-world applications:
+
+* Parse, an open source API server for mobile applications
+* Ghost, a blogging and content management platform
+* Redis, a lightweight, performant key/value store
+
+These complete examples should give you a better idea of how to structure your
+own deployments using Kubernetes.
+
+=== Parse
+The https://parse.com[Parse server] ((("deploying real-world applications", "Parse server", id="deployingreal-worldapplications-Parseserver")))((("Parse server", id="Parseserver")))is a cloud API dedicated to providing easy-to-use storage for mobile applications. It provides a variety of different
+client libraries that make it easy to integrate with Android, iOS, and other mobile platforms. Parse was purchased by Facebook in 2013 and subsequently shut down. Fortunately for us, a compatible server was open sourced by the core Parse team and is available for us to use. This section describes how to set up Parse in Kubernetes.
+
+==== Prerequisites
+Parse ((("deploying real-world applications", "Parse server", "prerequisites")))uses ((("Parse server", "prerequisites")))MongoDB cluster for its storage. <<storage_k8s>> described how to set
+up a replicated ((("MongoDB", "Parse, example")))MongoDB using Kubernetes ++StatefulSet++s. This section assumes you have a three-replica Mongo cluster running in Kubernetes with the names
++mongo-0.mongo+, +mongo-1.mongo+, and +mongo-2.mongo+.
+
+These instructions also assume that you have a Docker login; if you don't have one, you can get one for free at _https://docker.com_.
+
+Finally, we assume you have a Kubernetes cluster deployed and the
++kubectl+ tool properly configured.
+
+==== Building the parse-server
+The ((("deploying real-world applications", "Parse server", "building")))open ((("Parse server", "building")))source +parse-server+ comes with a _Dockerfile_ by default, for easy containerization. First, clone the Parse repository:
+
+++++
+<pre data-type="programlisting">$ <strong>git clone https://github.com/ParsePlatform/parse-server</strong></pre>
+++++
+
+Then move into that directory and build the image:
+
+++++
+<pre data-type="programlisting">$ <strong>cd parse-server</strong>
+$ <strong>docker build -t ${DOCKER_USER}/parse-server .</strong></pre>
+++++
+
+Finally, push that image up to the Docker hub:
+
+++++
+<pre data-type="programlisting">$ <strong>docker push ${DOCKER_USER}/parse-server</strong></pre>
+++++
+
+==== Deploying the parse-server
+
+Once ((("deploying real-world applications", "Parse server", "deploying")))you ((("Parse server", "deploying")))have the container image built, deploying the +parse-server+ into your cluster is fairly straightforward. Parse looks for three environment variables when being configured:
+
+++APPLICATION_ID++:: An identifier for authorizing your application
+++MASTER_KEY++::  An identifier that authorizes the master (root) user
+++DATABASE_URI++:: The URI for your MongoDB cluster
+
+Putting this all together, you can deploy Parse as a Kubernetes Deployment using the YAML file in <<example1401>>.
+
+[[example1401]]
+.parse.yaml
+=====
+----
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: parse-server
+  namespace: default
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        run: parse-server
+    spec:
+      containers:
+      - name: parse-server
+        image: ${DOCKER_USER}/parse-server
+        env:
+        - name: DATABASE_URI
+          value: "mongodb://mongo-0.mongo:27017,\
+            mongo-1.mongo:27017,mongo-2.mongo\
+            :27017/dev?replicaSet=rs0"
+        - name: APP_ID
+          value: my-app-id
+        - name: MASTER_KEY
+          value: my-master-key
+----
+=====
+
+==== Testing Parse
+
+To ((("deploying real-world applications", "Parse server", "testing")))((("Parse server", "testing")))test your deployment, you need to expose it as a Kubernetes service. You can
+do that using the service definition in <<example1402>>.
+
+[[example1402]]
+.parse-service.yaml
+=====
+----
+apiVersion: v1
+kind: Service
+metadata:
+  name: parse-server
+  namespace: default
+spec:
+  ports:
+  - port: 1337
+    protocol: TCP
+    targetPort: 1337
+  selector:
+    run: parse-server
+----
+=====
+
+Now your Parse server is up and running and ready to receive requests from your mobile applications. Of course, in any real application you are likely going to want to secure the connection with HTTPS. You can see the https://github.com/parse-community/parse-server[+parse-server+ GitHub page] for more details on such a configuration.
+
+=== Ghost
+
+Ghost ((("deploying real-world applications", "Ghost", id="deployingreal-worldapplications-Ghost")))is ((("Ghost", id="Ghost")))a popular blogging engine with a clean interface written in JavaScript.
+It can either use a file-based SQLite database or MySQL for storage.
+
+==== Configuring Ghost
+
+Ghost is configured with a simple JavaScript file that describes the server. We will store this file as a configuration map. A simple development configuration for Ghost looks like <<example1403>>.
+
+[[example1403]]
+.ghost-config.js
+=====
+----
+var path = require('path'),
+    config;
+
+config = {
+    development: {
+        url: 'http://localhost:2368',
+        database: {
+            client: 'sqlite3',
+            connection: {
+                filename: path.join(process.env.GHOST_CONTENT,
+                                    '/data/ghost-dev.db')
+            },
+            debug: false
+        },
+        server: {
+            host: '0.0.0.0',
+            port: '2368'
+        },
+        paths: {
+            contentPath: path.join(process.env.GHOST_CONTENT, '/')
+        }
+    }
+};
+
+module.exports = config;
+----
+=====
+
+Once you have this configuration file saved to _config.js_, you can create a Kubernetes ((("ConfigMaps", "Ghost, example", id="ConfigMaps-Ghost-example")))ConfigMap object ((("kubectl tool", " commands ", " create", id="createcommand-kubectltool")))using:
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl apply cm --from-file ghost-config.js ghost-config</strong></pre>
+++++
+
+This creates a ConfigMap that is named +ghost-config+. As with the Parse
+example, we will mount this configuration file as a volume inside of our
+container. We will deploy Ghost as a +Deployment+ object, which defines this volume mount as part of the Pod template (<<example1404>>).
+
+[[example1404]]
+.ghost.yaml
+=====
+----
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: ghost
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      run: ghost
+  template:
+    metadata:
+      labels:
+        run: ghost
+    spec:
+      containers:
+      - image: ghost
+        name: ghost
+        command:
+        - sh
+        - -c
+        - cp /ghost-config/config.js /var/lib/ghost/config.js
+          && /entrypoint.sh npm start
+        volumeMounts:
+        - mountPath: /ghost-config
+          name: config
+      volumes:
+      - name: config
+        configMap:
+          defaultMode: 420
+          name: ghost-config
+----
+=====
+
+One thing to note here is that we are copying the _config.js_ file from a different location into the location where Ghost expects to find it, since the ConfigMap can only mount directories, not individual
+files. Ghost expects other files that are not in that ConfigMap to be present in its directory, and thus we cannot simply mount the ((("kubectl tool", "commands", "create")))entire ConfigMap ((("ConfigMaps", "Ghost, example", startref="ConfigMaps-Ghost-example")))into
+_/var/lib/ghost_.
+
+You can run this with:
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl apply -f ghost.yaml</strong></pre>
+++++
+
+Once the pod is up and running, you can expose it as a service ((("kubectl tool", "commands", "expose deployments")))with:
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl expose deployments ghost --port=2368</strong></pre>
+++++
+
+Once the service is exposed, you can use the `kubectl proxy` command to access the Ghost ((("kubectl tool", "commands", "proxy ")))server:
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl proxy</strong></pre>
+++++
+
+Then visit _http://localhost:8001/api/v1/namespaces/default/services/ghost/proxy/_ in your web browser to begin interacting with Ghost.
+
+===== Ghost + MySQL
+
+Of course, this example isn't very scalable, or even reliable, since the
+contents of the blog are stored in a local file inside the container. A more scalable approach is to store the blog's data in a MySQL database.
+
+To do this, first modify _config.js_ to include:
+
+----
+...
+database: {
+   client: 'mysql',
+   connection: {
+     host     : 'mysql',
+     user     : 'root',
+     password : 'root',
+     database : 'ghost_db',
+     charset  : 'utf8'
+   }
+ },
+...
+----
+
+Next, ((("kubectl tool", "commands", "create configmap ")))create a new +ghost-config+ ConfigMap object:
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl create configmap ghost-config-mysql --from-file config.js</strong></pre>
+++++
+
+Then update the Ghost deployment to change the name of the ConfigMap mounted from +config-map+ to +config-map-mysql+:
+
+----
+...
+      - configMap:
+          name: ghost-config-mysql
+...
+----
+
+Using the instructions from <<kub-nat-stor-w-statefulsets>>, deploy a MySQL server in your Kubernetes cluster. Make sure that it has a service named +mysql+ defined as well.
+
+You will need to create the database in the MySQL
+((("kubectl tool", "commands", "exec")))
+database:
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl exec -it mysql-zzmlw -- mysql -u root -p</strong>
+Enter password:
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+...
+
+mysql&gt; <strong>create database ghost_db;</strong>
+...</pre>
+++++
+
+Finally, perform a rollout to deploy this new ((("kubectl tool", " commands ", " apply", id="applycommand-kubectltool")))configuration.
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl apply -f ghost.yaml</strong></pre>
+++++
+
+Because your Ghost server is now decoupled from its database, you can scale up your Ghost server and it will continue to share the data across all replicas.
+
+Edit _ghost.yaml_ to set +spec.replicas+ to +3+, then run:
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl apply -f ghost.yaml</strong></pre>
+++++
+
+Your ghost installation is now scaled up ((("kubectl tool", "commands", "apply", startref="applycommand-kubectltoo")))to ((("Ghost", startref="Ghost")))three ((("deploying real-world applications", "Ghost", startref="deployingreal-worldapplications-Ghost")))replicas.
+
+=== Redis
+
+Redis ((("deploying real-world applications", "Redis", id="deployingreal-worldapplications-Redis")))is ((("Redis", id="Redis")))a popular in-memory key/value store, with numerous additional features. It's an interesting application to deploy because it is a good example of the value of the Kubernetes Pod abstraction. This is because a reliable Redis installation actually is two programs working together. The first is +redis-server+, which implements the key/value store, and the other is +redis-sentinel+, which implements health checking and failover for a replicated Redis cluster.
+
+When Redis is deployed in a replicated manner, there is a single master server that can be used for both read and write operations. Additionally, there are other replica servers that duplicate the data written to the master and can be used for load-balancing read operations. Any of these replicas can fail over to become the master if the original master fails. This failover is performed by the Redis sentinel. In our deployment, both a Redis server and a Redis sentinel are colocated in the same ((("kubectl tool", "commands", "apply", startref="applycommand-kubectltool")))file.
+
+==== Configuring Redis
+
+As ((("deploying real-world applications", "Redis", "configuring", id="deployingreal-worldapplications-Redis-configuring")))before, ((("Redis", "configuring", id="Redis-configuring")))we're going to use Kubernetes ((("ConfigMaps", "Redis, example", id="ConfigMaps-Redis-example")))ConfigMaps to configure our Redis
+installation. Redis needs separate configurations for the master and slave replicas. To configure the master, create a file named _master.conf_ that contains the code in <<example1405>>.
+
+[[example1405]]
+.master.conf
+=====
+----
+bind 0.0.0.0
+port 6379
+
+dir /redis-data
+----
+=====
+
+This directs Redis to bind to all network interfaces on port 6379 (the default Redis port) and store its files in the _/redis-data_ directory.
+
+The slave configuration is identical, but it adds a single
++slaveof+ directive. Create a file named _slave.conf_ that contains what's in <<example1406>>.
+
+[[example1406]]
+.slave.conf
+=====
+----
+bind 0.0.0.0
+port 6379
+
+dir .
+
+slaveof redis-0.redis 6379
+----
+=====
+
+Notice that we are using +redis-0.redis+ for the name of the master. We will set up this name using a service and a StatefulSet.
+
+We also need a configuration for the Redis sentinel. Create a file named
+_sentinel.conf_ with the contents of <<example1407>>.
+
+[[example1407]]
+.sentinel.conf
+=====
+----
+bind 0.0.0.0
+port 26379
+
+sentinel monitor redis redis-0.redis 6379 2
+sentinel parallel-syncs redis 1
+sentinel down-after-milliseconds redis 10000
+sentinel failover-timeout redis 20000
+----
+=====
+
+Now that we have all of our configuration files, we need to create a couple of simple wrapper scripts to use in our StatefulSet deployment.
+
+The first script simply looks at the hostname for the Pod and determines whether this is the master or a slave, and launches Redis with the appropriate configuration. Create a file named _init.sh_ containing the code in <<example1408>>.
+
+[[example1408]]
+.init.sh
+=====
+----
+#!/bin/bash
+if [[ ${HOSTNAME} == 'redis-0' ]]; then
+  redis-server /redis-config/master.conf
+else
+  redis-server /redis-config/slave.conf
+fi
+----
+=====
+
+The other script is for the sentinel. In this case it is necessary because we need to wait for the +redis-0.redis+ DNS name to become available. Create a script named _sentinel.sh_ containing the code in <<example1409>>.
+
+[[example1409]]
+.sentinel.sh
+=====
+----
+#!/bin/bash
+while ! ping -c 1 redis-0.redis; do
+  echo 'Waiting for server'
+  sleep 1
+done
+
+redis-sentinel /redis-config/sentinel.conf
+----
+=====
+
+Now we need to package all of these files up into a ConfigMap object. You can do
+this with ((("ConfigMaps", "Redis, example", startref="ConfigMaps-Redis-example")))a single ((("Redis", "configuring", startref="Redis-configuring")))command ((("deploying real-world applications", "Redis", "configuring", startref="deployingreal-worldapplications-Redis-configuring")))line:
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl create configmap \
+  --from-file=slave.conf=./slave.conf \
+  --from-file=master.conf=./master.conf \
+  --from-file=sentinel.conf=./sentinel.conf \
+  --from-file=init.sh=./init.sh \
+  --from-file=sentinel.sh=./sentinel.sh \
+  redis-config</strong></pre>
+++++
+
+==== Creating a Redis Service
+
+The ((("deploying real-world applications", "Redis", "creating")))next ((("Redis", "creating")))step ((("deploying real-world applications", "Redis", "deploying", id="deployingreal-worldapplications-Redis-deploying")))in deploying Redis is to create a Kubernetes service that will
+provide naming and discovery for the Redis replicas (e.g., +redis-0.redis+). To do this, we create a service without a cluster IP address (<<example1410>>).
+
+[[example1410]]
+.redis-service.yaml
+=====
+----
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+spec:
+  ports:
+  - port: 6379
+    name: peer
+  clusterIP: None
+  selector:
+    app: redis
+----
+=====
+
+You can create this service with +kubectl apply -f redis-service.yaml+. Don't worry that the Pods for the service don't exist yet. Kubernetes doesn't care; it will add the right names when the Pods are created.
+
+==== Deploying Redis
+
+We're ((("Redis", "deploying", id="Redis-deploying")))ready to deploy our Redis cluster. To do this we're going to use a
+((("StatefulSets", "Redis, example", id="StatefulSets-Redis-example")))StatefulSet. We introduced StatefulSets in <<mongodb_install_xref>>, when we discussed our MongoDB
+installation. StatefulSets provide indexing (e.g., +redis-0.redis+) as well as ordered creation and deletion semantics (+redis-0+ will always be created before +redis-1+, and so on). They're quite useful for stateful applications like Redis, but honestly, they basically look like Kubernetes pass:[<span class="keep-together"><code>Deployment</code>s</span>]. For our Redis cluster, here's what the StatefulSet looks like <<example1411>>.
+
+[[example1411]]
+.redis.yaml
+=====
+----
+apiVersion: apps/v1beta1
+kind: StatefulSet
+metadata:
+  name: redis
+spec:
+  replicas: 3
+  serviceName: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - command: [sh, -c, source /redis-config/init.sh ]
+        image: redis:3.2.7-alpine
+        name: redis
+        ports:
+        - containerPort: 6379
+          name: redis
+        volumeMounts:
+        - mountPath: /redis-config
+          name: config
+        - mountPath: /redis-data
+          name: data
+      - command: [sh, -c, source /redis-config/sentinel.sh]
+        image: redis:3.2.7-alpine
+        name: sentinel
+        volumeMounts:
+        - mountPath: /redis-config
+          name: config
+      volumes:
+      - configMap:
+          defaultMode: 420
+          name: redis-config
+        name: config
+      - emptyDir:
+        name: data
+----
+=====
+
+You can see that there are two containers in this Pod. One runs the _init.sh_ script that we created and the main  Redis server, and the other is the sentinel that monitors the servers.
+
+You can also note that there are two volumes defined in the Pod. One is the volume that uses our ConfigMap to configure the two Redis applications, and the other is a simple +emptyDir+ volume that is mapped into the Redis server container to hold the application data so that it survives a container restart. For a more reliable Redis installation this could be a network-attached disk, as discussed in <<storage_k8s>>.
+
+Now that we've defined our Redis cluster, we can ((("StatefulSets", "Redis, example", startref="StatefulSets-Redis-example")))create ((("Redis", "deploying", startref="Redis-deploying")))it ((("deploying real-world applications", "Redis", "deploying", startref="deployingreal-worldapplications-Redis-deploying")))using:
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl apply -f redis.yaml</strong></pre>
+++++
+
+==== Playing with Our Redis Cluster
+
+To ((("deploying real-world applications", "Redis", "playing without cluster")))demonstrate ((("Redis", "playing without cluster")))that we've actually successfully created a Redis cluster, we can perform some tests.
+
+First, we can determine which server the Redis sentinel believes is the master. To do this, we can run the +redis-cli+ command in one of the pods:
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl exec redis-2 -c redis \
+  -- redis-cli -p 26379 sentinel get-master-addr-by-name redis</strong></pre>
+++++
+
+This should print out the IP address of the +redis-0+ pod. You can confirm this using +kubectl get pods -o wide+.
+
+Next, we'll confirm that the replication is actually working.
+
+To do this, first try to read the value +foo+ from one of the ((("kubectl tool", "commands", "exec")))replicas:
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl exec redis-2 -c redis -- redis-cli -p 6379 get foo</strong></pre>
+++++
+
+You should see no data in the response.
+
+Next, try to write that data to a replica:
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl exec redis-2 -c redis -- redis-cli -p 6379 set foo 10</strong>
+READONLY You can't write against a read only slave.</pre>
+++++
+
+You can't write to a replica, because it's read-only. Let's try the same command against +redis-0+, which is the master:
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl exec redis-0 -c redis -- redis-cli -p 6379 set foo 10</strong>
+OK</pre>
+++++
+
+Now try the original read from a replica:
+
+++++
+<pre data-type="programlisting">$ <strong>kubectl exec redis-2 -c redis -- redis-cli -p 6379 get foo</strong>
+10</pre>
+++++
+
+This shows that our cluster is set up correctly, and data is replicating between masters ((("Redis", startref="Redis")))and ((("deploying real-world applications", "Redis", startref="deployingreal-worldapplications-Redis")))slaves.
+
+=== Summary
+
+In the preceding sections we described how to deploy a variety of
+applications using assorted Kubernetes concepts. We saw how to put
+together service-based naming and discovery to deploy web frontends like Ghost as well as API servers like Parse, and we saw how Pod abstraction makes it easy to deploy the components that make up a reliable Redis cluster. Regardless of whether you will actually deploy these applications to production, the examples demonstrated patterns that you can repeat to manage your applications using Kubernetes. We hope that seeing the concepts we described in previous chapters come to life in real-world examples helps you better understand how to make Kubernetes work for ((("deploying real-world applications", startref="deployingreal-worldapplications")))you.
+
